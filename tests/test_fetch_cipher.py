@@ -168,7 +168,6 @@ class TestCipherInfo(TestCase):
         os.environ.pop(ENV_KMS_SK, None)
         DataPipeClient.DATAPIPE_SOCKET_PATH = self.server_address
         info = CipherInfo(True, header_bytes)
-        info = CipherInfo(True, header_bytes)
         self.assertTrue(info.use_cipher)
         self.assertTrue(info.use_header)
         self.assertTrue(np.array_equal(info.key, self.target_key_2))
@@ -176,7 +175,8 @@ class TestCipherInfo(TestCase):
 
     def test_fetch_from_datapipe(self):
         DataPipeClient.DATAPIPE_SOCKET_PATH = self.server_address
-        info = CipherInfo(True)
+        DataPipeClient.ENCRYPT_HEADER['X-Encrypt-Caller-Pod'] = 'test-pod-name'
+        info = CipherInfo(True, None, '/maas_model/test_path')
         self.assertTrue(info.use_cipher)
         self.assertTrue(np.array_equal(info.key, self.target_key))
         self.assertTrue(np.array_equal(info.iv, self.target_iv))
@@ -190,12 +190,12 @@ class TestCipherInfo(TestCase):
         self.assertTrue(np.array_equal(info.key, self.target_key))
         self.assertTrue(np.array_equal(info.iv, self.target_iv))
 
-    def test_fallback(self):
+    def test_raise_error(self):
         DataPipeClient.DATAPIPE_SOCKET_PATH = '/path/not/exist'
         os.environ['VETURBOIO_KEY'] = base64.b64encode(b'abcdefgh12').decode('ascii')
         os.environ['VETURBOIO_IV'] = base64.b64encode(b'1234567887').decode('ascii')
-        info = CipherInfo(True)
-        self.assertFalse(info.use_cipher)
+        with self.assertRaises(RuntimeError):
+            info = CipherInfo(True)
 
     @classmethod
     def tearDownClass(cls):
@@ -232,19 +232,9 @@ class TestCredentials(TestCase):
         self.assertEqual(cred['SessionToken'], 'ST' * 12)
 
     def test_sfcs_conf(self):
-        # case 1: a xml file already exists, do nothing
-        sfcs_conf = os.path.join(os.getcwd(), 'base_model.xml')
-        generate_sfcs_conf_xml(sfcs_conf, {'test': 'test'})
-        init_sfcs_conf('/base_model/tensor.pt')
-        self.assertEqual(os.environ['LIBCFS_CONF'], sfcs_conf)
-        self.assertEqual(len(credentials_helper.threads), 0)
-        self.assertEqual(len(credentials_helper.running), 0)
-        os.remove(sfcs_conf)
-
         for e in SFCS_REQ_ENV_LIST:
             os.environ[e] = 'test-value'
-
-        # case 2: env SFCS_ACCESS_KEY and SFCS_SECRET_KEY and SFCS_NAMENODE_ENDPOINT_ADDRESS exists
+        # case 1: env SFCS_ACCESS_KEY and SFCS_SECRET_KEY and SFCS_NAMENODE_ENDPOINT_ADDRESS exists
         os.environ['SFCS_ACCESS_KEY'] = 'A' * 12
         os.environ['SFCS_SECRET_KEY'] = 'S' * 12
         os.environ['SFCS_NAMENODE_ENDPOINT_ADDRESS'] = '100.67.19.231'
@@ -252,13 +242,13 @@ class TestCredentials(TestCase):
         if os.path.exists(sfcs_conf):
             os.remove(sfcs_conf)
         init_sfcs_conf('/base_model2/tensor.pt')
-        self.assertEqual(os.environ['LIBCFS_CONF'], sfcs_conf)
+        self.assertEqual(os.environ['LIBCLOUDFS_CONF'], sfcs_conf)
         self.assertEqual(len(credentials_helper.threads), 0)
         self.assertEqual(len(credentials_helper.running), 0)
         self.assertTrue(os.path.exists(sfcs_conf))
         os.remove(sfcs_conf)
 
-        # case 3: use datapipe socket to get and refresh ak, sk, st and namenode_ip
+        # case 2: use datapipe socket to get and refresh ak, sk, st and namenode_ip
         DataPipeClient.DATAPIPE_SOCKET_PATH = self.server_address
         os.environ.pop('SFCS_ACCESS_KEY', None)
         os.environ.pop('SFCS_SECRET_KEY', None)
@@ -277,12 +267,15 @@ class TestCredentials(TestCase):
         self.assertTrue(credentials_helper.running['base_model4'])
         self.assertTrue(os.path.exists(sfcs_conf3))
         self.assertTrue(os.path.exists(sfcs_conf4))
+        for i in range(5):
+            os.remove(sfcs_conf3)
+            os.remove(sfcs_conf4)
+            sleep(3)
+            self.assertTrue(os.path.exists(sfcs_conf3))
+            self.assertTrue(os.path.exists(sfcs_conf4))
+        print(credentials_helper.threads)
         os.remove(sfcs_conf3)
         os.remove(sfcs_conf4)
-        sleep(3)
-        self.assertTrue(os.path.exists(sfcs_conf3))
-        self.assertTrue(os.path.exists(sfcs_conf4))
-        print(credentials_helper.threads)
 
     def test_sfcs_conf_json(self):
         for e in SFCS_REQ_ENV_LIST:
@@ -308,17 +301,18 @@ class TestCredentials(TestCase):
         self.assertTrue(credentials_helper.running['base_model2'])
         self.assertTrue(os.path.exists(sfcs_conf1))
         self.assertTrue(os.path.exists(sfcs_conf2))
+        for i in range(5):
+            sleep(3)
+            self.assertTrue(os.path.exists(sfcs_conf1))
+            self.assertTrue(os.path.exists(sfcs_conf2))
+        print(credentials_helper.threads)
         os.remove(sfcs_conf1)
         os.remove(sfcs_conf2)
-        sleep(3)
-        self.assertTrue(os.path.exists(sfcs_conf1))
-        self.assertTrue(os.path.exists(sfcs_conf2))
-        print(credentials_helper.threads)
 
     @classmethod
     def tearDownClass(cls):
         credentials_helper.stop()
-        os.environ.pop('LIBCFS_CONF', None)
+        os.environ.pop('LIBCLOUDFS_CONF', None)
         for e in SFCS_REQ_ENV_LIST:
             os.environ.pop(e, None)
         for e in SFCS_OPT_ENV_LIST:

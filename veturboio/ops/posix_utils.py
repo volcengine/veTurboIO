@@ -16,7 +16,7 @@ limitations under the License.
 
 from typing import Optional
 
-import torch
+import numpy as np
 from loguru import logger
 
 from veturboio.ops.cipher import CipherInfo
@@ -26,40 +26,26 @@ try:
 
     veturboio_ext = load_veturboio_ext()
     IOHelper = veturboio_ext.IOHelper
+    POSIXFile = veturboio_ext.POSIXFile
 except ImportError:
-    IOHelper = None
+    POSIXFile = None
     logger.warning("veturboio_ext not found, fallback to pure python implementation")
 
 
-def load_file_to_tensor(
+def posix_read_file(
     file_path: str,
-    total_tensor: torch.Tensor,
-    sample_tensor: torch.Tensor,
+    arr: np.ndarray,
+    length: int,
     offset: int,
-    helper: IOHelper,
-    device_id: Optional[int] = -1,
-    num_thread: Optional[int] = 32,
-    use_pinmem: Optional[bool] = False,
-    use_sfcs_sdk: Optional[bool] = False,
-    use_direct_io: Optional[bool] = False,
+    num_thread: Optional[int] = 1,
     cipher_info: CipherInfo = CipherInfo(False),
-) -> torch.Tensor:
-    return helper.load_file_to_tensor(
+    use_direct_io: bool = False,
+) -> int:
+    posix_file = POSIXFile(
         file_path,
-        total_tensor,
-        sample_tensor,
-        offset,
-        device_id,
-        num_thread,
-        use_pinmem,
-        use_sfcs_sdk,
-        use_direct_io,
         cipher_info.use_cipher,
         cipher_info.key,
         cipher_info.iv,
         CipherInfo.HEADER_SIZE if cipher_info.use_header else 0,
     )
-
-
-def init_io_helper() -> IOHelper:
-    return IOHelper()
+    return posix_file.read_file_to_array(arr, length, offset, num_thread, use_direct_io)

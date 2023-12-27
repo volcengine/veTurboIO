@@ -16,18 +16,34 @@ limitations under the License.
 
 import os
 import platform
+import sys
 
 import requests
 import setuptools
 import torch
 from pkg_resources import parse_version
-from setuptools import find_packages, setup
-from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
+from setuptools import Extension, find_packages, setup
+from torch.utils.cpp_extension import BuildExtension, CppExtension, include_paths
 
 # initialize variables for compilation
 IS_LINUX = platform.system() == "Linux"
 IS_DARWIN = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
+
+this_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+def get_option():
+    if os.getenv("NPU_EXTENSION_ENABLED", "0") == "1":
+        sys.argv.append("--npu_ext")
+    elif "--cuda_ext" not in sys.argv and "--npu_ext" not in sys.argv and "--cpu_ext" not in sys.argv:
+        print(
+            '''No known extension specified, default to use --cuda_ext. Currently supported:
+            --cuda_ext
+            --npu_ext
+            --cpu_ext'''
+        )
+        sys.argv.append("--cuda_ext")
 
 
 def get_version():
@@ -37,7 +53,12 @@ def get_version():
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
 
-    return m.__version__
+    if "--cpu_ext" in sys.argv:
+        return m.__version__ + "+cpu"
+    elif "--npu_ext" in sys.argv:
+        return m.__version__ + "+npu"
+    else:
+        return m.__version__
 
 
 def make_relative_rpath(path):
@@ -50,6 +71,7 @@ def make_relative_rpath(path):
 
 
 def get_veturboio_extension():
+    get_option()
     # prevent ninja from using too many resources
     try:
         import psutil
@@ -71,41 +93,108 @@ def get_veturboio_extension():
     # Since PyTorch1.8.0, it has a default value so users do not need
     # to pass an empty list anymore.
     # More details at https://github.com/pytorch/pytorch/pull/45956
-    extra_compile_args = {'cxx': [], 'nvcc': ['-O3']}
+    extra_compile_args = {'cxx': ['-fvisibility=hidden'], 'nvcc': ['-O3']}
 
     if parse_version(torch.__version__) <= parse_version('1.12.1'):
-        extra_compile_args['cxx'] = ['-std=c++14']
+        extra_compile_args['cxx'].append('-std=c++14')
     else:
-        extra_compile_args['cxx'] = ['-std=c++17']
+        extra_compile_args['cxx'].append('-std=c++17')
 
-    include_dirs = ["veturboio/ops/csrc/include"]
-    library_dirs = ["veturboio/ops/csrc/lib"]
-    libraries = ["cfs", ":libfastcrypto_gpu.so.0.3"]
+    name = "veturboio_ext"
+
+    sources = [
+        "veturboio/ops/csrc/pybind.cpp",
+        "veturboio/ops/csrc/posix.cpp",
+        "veturboio/ops/csrc/sfcs.cpp",
+        "veturboio/ops/csrc/io_helper_cpu_common.cpp",
+        "veturboio/ops/csrc/cipher.cpp",
+    ]
+
+    include_dirs = include_paths()
+    include_dirs.append("veturboio/ops/csrc/include")
+
+    torch_dir = os.path.join(os.path.dirname(torch.__file__), "lib")
+    library_dirs = [torch_dir]
+    library_dirs.append("veturboio/ops/csrc/lib")
+
+    libraries = ["cloudfs", ":libfastcrypto_gpu.so.0.3"]
+
     extra_link_args = [make_relative_rpath("veturboio/ops/csrc/lib")]
 
-    return CUDAExtension(
-        name="veturboio_ext",
-        sources=[
-            "veturboio/ops/csrc/pybind.cpp",
-            "veturboio/ops/csrc/load_utils.cpp",
-            "veturboio/ops/csrc/sfcs.cpp",
-            "veturboio/ops/csrc/io_helper.cu",
-            "veturboio/ops/csrc/cipher.cpp",
-        ],
-        define_macros=define_macros,
-        include_dirs=include_dirs,
-        library_dirs=library_dirs,
-        libraries=libraries,
-        extra_compile_args=extra_compile_args,
-        extra_link_args=extra_link_args,
-    )
+    # Refer to: https://github.com/pytorch/pytorch/blob/main/torch/utils/cpp_extension.py#L918
+    # In torch 2.0, this flag is False, and the *.so lib set this flag as False when building.
+    # In newer torch, this flag is True, to keep compatibility with *.so lib, we set it False
+    # to generate g++ flags '-D_GLIBCXX_USE_CXX11_ABI=0' when building veturboio_ext, otherwise
+    # some 'undefine symbol' error of std::string will be thrown.
+    torch._C._GLIBCXX_USE_CXX11_ABI = False
+
+    if "--cuda_ext" in sys.argv:
+        sys.argv.remove("--cuda_ext")
+
+        extra_compile_args['nvcc'].append('-O3')
+
+        sources.append("veturboio/ops/csrc/io_helper.cu")
+
+        define_macros.append(("USE_CUDA", "1"))
+
+        from torch.utils.cpp_extension import CUDAExtension
+
+        return CUDAExtension(
+            name=name,
+            sources=sources,
+            define_macros=define_macros,
+            include_dirs=include_dirs,
+            library_dirs=library_dirs,
+            libraries=libraries,
+            extra_compile_args=extra_compile_args,
+            extra_link_args=extra_link_args,
+        )
+    else:
+        extra_compile_args['cxx'].append('-O3')
+
+        libraries.append("torch_cpu")
+        libraries.append("torch_python")
+
+        extra_link_args.append(f"-Wl,--rpath={torch_dir},--enable-new-dtags")
+
+        if "--npu_ext" in sys.argv:
+            sys.argv.remove("--npu_ext")
+
+            sources.append("veturboio/ops/csrc/io_helper_npu.cpp")
+            define_macros.append(("USE_NPU", "1"))
+
+            return Extension(
+                name=name,
+                sources=sources,
+                define_macros=define_macros,
+                include_dirs=include_dirs,
+                library_dirs=library_dirs,
+                libraries=libraries,
+                extra_compile_args=extra_compile_args,
+                extra_link_args=extra_link_args,
+            )
+        elif "--cpu_ext" in sys.argv:
+            sys.argv.remove("--cpu_ext")
+
+            sources.append("veturboio/ops/csrc/io_helper_cpu.cpp")
+
+            return Extension(
+                name=name,
+                sources=sources,
+                define_macros=define_macros,
+                include_dirs=include_dirs,
+                library_dirs=library_dirs,
+                libraries=libraries,
+                extra_compile_args=extra_compile_args,
+                extra_link_args=extra_link_args,
+            )
 
 
 class GetLibCfsCommand(setuptools.Command):
     """get libcfs from url"""
 
     description = 'get libcfs from url'
-    user_options = [('src=', 's', 'source url of libcfs.so'), ('dst=', 'd', 'dest filepath of libcfs.so')]
+    user_options = [('src=', 's', 'source url of libcloudfs.so'), ('dst=', 'd', 'dest filepath of libcloudfs.so')]
 
     def initialize_options(self):
         from veturboio.utils.load_veturboio_ext import LIBCFS_DEFAULT_PATH, LIBCFS_DEFAULT_URL
@@ -117,7 +206,7 @@ class GetLibCfsCommand(setuptools.Command):
         pass
 
     def run(self):
-        print(f"download libcfs.so from {self.src}, save to {self.dst}")
+        print(f"download libcloudfs.so from {self.src}, save to {self.dst}")
         r = requests.get(self.src, timeout=60)
         with open(self.dst, 'wb') as f:
             f.write(r.content)
@@ -133,10 +222,12 @@ setup(
     install_requires=[
         "safetensors",
         "numpy",
+        "netifaces",
         "loguru",
         "requests-unixsocket",
         "requests",
     ],
     include_package_data=True,
     cmdclass={"get_libcfs": GetLibCfsCommand, "build_ext": BuildExtension},
+    dependency_links=['https://mirrors.ivolces.com/pypi/'],
 )

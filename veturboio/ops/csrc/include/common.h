@@ -18,7 +18,9 @@
 
 #include <torch/torch.h>
 #include <torch/extension.h>
+#if defined(USE_CUDA)
 #include <cuda_runtime.h>
+#endif
 #include <fcntl.h>
 #include <unistd.h>
 #include <thread>
@@ -30,7 +32,7 @@
 #include "sfcs.h"
 
 #define THREAD_NICE_ADJ -10
-#define BUF_ALIGN_SIZE 4096
+#define BUF_ALIGN_SIZE (size_t)4096
 
 using namespace std;
 

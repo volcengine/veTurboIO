@@ -46,19 +46,19 @@ class TestLoad(TestCase):
 
         cls.tensors_0 = {
             "weight1": torch.randn(2000, 10),
-            "weight2": torch.randn(2000, 10),
+            "weight2": torch.IntTensor(2000, 10),
         }
 
         cls.tensors_1 = {
             "weight1": torch.randn(2000, 10),
-            "weight2": torch.randn(2000, 10),
-            "weight3": torch.randn(2000, 10),
+            "weight2": torch.IntTensor(2000, 10),
+            "weight3": torch.BoolTensor(2000, 10),
         }
 
         cls.filepath_0 = os.path.join(cls.tempdir.name, "model_0.safetensors")
         cls.filepath_1 = os.path.join(cls.tempdir.name, "model_1.safetensors")
         veturboio.save_file(cls.tensors_0, cls.filepath_0)
-        veturboio.save_file(cls.tensors_1, cls.filepath_1)
+        veturboio.save_file(cls.tensors_1, cls.filepath_1, enable_fast_mode=True)
 
         cls.pt_filepath = os.path.join(cls.tempdir.name, "model.pt")
         torch.save(cls.tensors_0, cls.pt_filepath)
@@ -70,7 +70,7 @@ class TestLoad(TestCase):
         cls.filepath_0_enc = os.path.join(cls.tempdir.name, "model_0_enc.safetensors")
         cls.filepath_1_enc = os.path.join(cls.tempdir.name, "model_1_enc.safetensors")
         veturboio.save_file(cls.tensors_0, cls.filepath_0_enc, use_cipher=True)
-        veturboio.save_file(cls.tensors_1, cls.filepath_1_enc, use_cipher=True)
+        veturboio.save_file(cls.tensors_1, cls.filepath_1_enc, use_cipher=True, enable_fast_mode=True)
 
         cls.pt_filepath_enc = os.path.join(cls.tempdir.name, "model_enc.pt")
         veturboio.save_pt(cls.tensors_0, cls.pt_filepath_enc, use_cipher=True)
@@ -82,6 +82,7 @@ class TestLoad(TestCase):
 
         cls.pt_filepath_enc_h = os.path.join(cls.tempdir.name, "model_enc_h.pt")
         veturboio.save_pt(cls.tensors_0, cls.pt_filepath_enc_h, use_cipher=True)
+        del os.environ["VETURBOIO_CIPHER_HEADER"]
 
         if torch.cuda.is_available():
             cls.cuda_tensors_0 = deepcopy(cls.tensors_0)
@@ -94,12 +95,15 @@ class TestLoad(TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # cls.tempdir.cleanup()
-        pass
+        cls.tempdir.cleanup()
 
-    def _run_pipeline(self, tensors, filepath, map_location, use_cipher, enable_fast_mode=True):
+    def _run_pipeline(self, tensors, filepath, map_location, use_cipher, enable_fast_mode=True, state_dict=None):
         loaded_tensors = veturboio.load(
-            filepath, map_location=map_location, use_cipher=use_cipher, enable_fast_mode=enable_fast_mode
+            filepath,
+            map_location=map_location,
+            use_cipher=use_cipher,
+            enable_fast_mode=enable_fast_mode,
+            state_dict=state_dict,
         )
         for key in tensors.keys():
             self.assertTrue(torch.allclose(tensors[key], loaded_tensors[key]))
@@ -110,6 +114,30 @@ class TestLoad(TestCase):
         self._run_pipeline(self.tensors_0, self.filepath_0_enc, "cpu", use_cipher=True)
         self._run_pipeline(self.tensors_0, self.filepath_0, "cpu", use_cipher=False, enable_fast_mode=False)
         self._run_pipeline(self.tensors_0, self.filepath_0_enc, "cpu", use_cipher=True, enable_fast_mode=False)
+        pre_allocated_tensors = {
+            "weight1": torch.randn(2000, 10),
+            "weight2": torch.IntTensor(2000, 10),
+        }
+        self._run_pipeline(self.tensors_0, self.filepath_0, "cpu", use_cipher=False, state_dict=pre_allocated_tensors)
+        self._run_pipeline(
+            self.tensors_0, self.filepath_0_enc, "cpu", use_cipher=True, state_dict=pre_allocated_tensors
+        )
+        self._run_pipeline(
+            self.tensors_0,
+            self.filepath_0,
+            "cpu",
+            use_cipher=False,
+            enable_fast_mode=False,
+            state_dict=pre_allocated_tensors,
+        )
+        self._run_pipeline(
+            self.tensors_0,
+            self.filepath_0_enc,
+            "cpu",
+            use_cipher=True,
+            enable_fast_mode=False,
+            state_dict=pre_allocated_tensors,
+        )
 
     @unittest.skipIf(not torch.cuda.is_available(), "CUDA not available")
     def test_pipeline_cuda(self):
@@ -117,6 +145,32 @@ class TestLoad(TestCase):
         self._run_pipeline(self.cuda_tensors_0, self.filepath_0_enc, "cuda:0", use_cipher=True)
         self._run_pipeline(self.cuda_tensors_0, self.filepath_0, "cuda:0", use_cipher=False, enable_fast_mode=False)
         self._run_pipeline(self.cuda_tensors_0, self.filepath_0_enc, "cuda:0", use_cipher=True, enable_fast_mode=False)
+        pre_allocated_tensors = {
+            "weight1": torch.randn(2000, 10).cuda(),
+            "weight2": torch.IntTensor(2000, 10).cuda(),
+        }
+        self._run_pipeline(
+            self.cuda_tensors_0, self.filepath_0, "cuda:0", use_cipher=False, state_dict=pre_allocated_tensors
+        )
+        self._run_pipeline(
+            self.cuda_tensors_0, self.filepath_0_enc, "cuda:0", use_cipher=True, state_dict=pre_allocated_tensors
+        )
+        self._run_pipeline(
+            self.cuda_tensors_0,
+            self.filepath_0,
+            "cuda:0",
+            use_cipher=False,
+            enable_fast_mode=False,
+            state_dict=pre_allocated_tensors,
+        )
+        self._run_pipeline(
+            self.cuda_tensors_0,
+            self.filepath_0_enc,
+            "cuda:0",
+            use_cipher=True,
+            enable_fast_mode=False,
+            state_dict=pre_allocated_tensors,
+        )
 
     def test_read_multi_state_dict_cpu(self):
         load_tensor_0 = self._run_pipeline(self.tensors_0, self.filepath_0, "cpu", use_cipher=False)
@@ -165,16 +219,13 @@ class TestLoad(TestCase):
             self.assertTrue(torch.allclose(self.cuda_tensors_0[key], loaded_tensors_enc[key]))
 
     def test_load_cipher_header_cpu(self):
-        os.environ["VETURBOIO_CIPHER_HEADER"] = "1"
         self._run_pipeline(self.tensors_0, self.filepath_0_enc_h, "cpu", use_cipher=True)
         self._run_pipeline(self.tensors_0, self.pt_filepath_enc_h, "cpu", use_cipher=True)
         self._run_pipeline(self.tensors_0, self.filepath_0_enc_h, "cpu", use_cipher=True, enable_fast_mode=False)
         self._run_pipeline(self.tensors_0, self.pt_filepath_enc_h, "cpu", use_cipher=True, enable_fast_mode=False)
-        del os.environ["VETURBOIO_CIPHER_HEADER"]
 
     @unittest.skipIf(not torch.cuda.is_available(), "CUDA not available")
     def test_load_cipher_header_cuda(self):
-        os.environ["VETURBOIO_CIPHER_HEADER"] = "1"
         self._run_pipeline(self.cuda_tensors_0, self.filepath_0_enc_h, "cuda:0", use_cipher=True)
         self._run_pipeline(self.cuda_tensors_0, self.pt_filepath_enc_h, "cuda:0", use_cipher=True)
         self._run_pipeline(
@@ -183,12 +234,30 @@ class TestLoad(TestCase):
         self._run_pipeline(
             self.cuda_tensors_0, self.pt_filepath_enc_h, "cuda:0", use_cipher=True, enable_fast_mode=False
         )
-        del os.environ["VETURBOIO_CIPHER_HEADER"]
 
     def test_load_directIO_fall_back(self):
         with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpFile:
-            veturboio.save_file(self.tensors_0, tmpFile.file.name)
+            veturboio.save_file(self.tensors_0, tmpFile.name)
             tmpFile.flush()
             loaded_tensors = veturboio.load(tmpFile.name, map_location="cpu", use_direct_io=True)
             for key in self.tensors_0.keys():
                 self.assertTrue(torch.allclose(self.tensors_0[key], loaded_tensors[key]))
+
+    def test_load_to_shmem(self):
+        shmem = veturboio.load_to_shmem(self.filepath_0, use_cipher=False)
+        loaded_tensors = veturboio.load(
+            os.path.join("/dev/shm/", shmem.name), map_location="cpu", enable_fast_mode=False, use_cipher=False
+        )
+        for key in self.tensors_0.keys():
+            self.assertTrue(torch.allclose(self.tensors_0[key], loaded_tensors[key]))
+        shmem.close()
+        shmem.unlink()
+
+        shmem = veturboio.load_to_shmem(self.filepath_0_enc, use_cipher=True)
+        loaded_tensors = veturboio.load(
+            os.path.join("/dev/shm/", shmem.name), map_location="cpu", enable_fast_mode=False, use_cipher=False
+        )
+        for key in self.tensors_0.keys():
+            self.assertTrue(torch.allclose(self.tensors_0[key], loaded_tensors[key]))
+        shmem.close()
+        shmem.unlink()

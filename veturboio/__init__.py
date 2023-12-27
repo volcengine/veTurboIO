@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 
-from veturboio.io import load, save_file, save_model, save_pt
-from veturboio.ops.load_utils import init_io_helper
+from veturboio.io import load, load_to_shmem, save_file, save_model, save_pt
+from veturboio.ops.io_utils import init_io_helper
 
-__all__ = ["load", "save_file", "save_model", "init_io_helper", "save_pt"]
+__all__ = ["load", "load_to_shmem", "save_file", "save_model", "init_io_helper", "save_pt"]

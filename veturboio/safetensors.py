@@ -17,7 +17,8 @@ limitations under the License.
 import json
 import os
 import pprint
-from typing import Callable, Dict, List
+from multiprocessing import shared_memory
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -97,7 +98,7 @@ class TensorMeta:
 
 
 class SafetensorsFile:
-    def __init__(self, file: FILE_PATH, loader: BaseLoader, use_cipher: bool = False) -> None:
+    def __init__(self, file: FILE_PATH, loader: BaseLoader, use_cipher: Optional[bool] = None) -> None:
         self._file = file
         self._loader = loader
 
@@ -105,9 +106,9 @@ class SafetensorsFile:
 
         # cipher related
         self._cipher_info = CipherInfo(False)
-        if use_cipher or os.getenv("VETURBOIO_USE_CIPHER", "0") == "1":
+        if use_cipher == True or use_cipher == None and os.getenv("VETURBOIO_USE_CIPHER", "0") == "1":
             header_bytes = loader.load_to_bytes(offset=0, count=CipherInfo.HEADER_SIZE)
-            self._cipher_info = CipherInfo(True, header_bytes)
+            self._cipher_info = CipherInfo(True, header_bytes, os.path.abspath(self.file))
 
         if self._cipher_info.use_header:
             h_off = CipherInfo.HEADER_SIZE
@@ -206,8 +207,67 @@ class SafetensorsFile:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def load(self, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
+    def load(self, map_location: str = "cpu", state_dict: Dict[str, torch.Tensor] = None) -> Dict[str, torch.Tensor]:
         if not self._is_valid:
             return self._loader.load_pt(map_location, self._cipher_info)
         else:
-            return self._loader.load_safetensors(self, map_location)
+            return self._loader.load_safetensors(self, map_location, state_dict)
+
+    def load_to_shmem(self) -> shared_memory.SharedMemory:
+        return self._loader.load_to_shmem(self._cipher_info)
+
+
+def parse_state_dict(state_dict: Dict[str, torch.Tensor]):
+    meta = {}
+    tensors = []
+    sizes = []
+    offsets = []
+
+    data_offset_begin = 0
+    data_offset_end = 0
+    _safetensors_dtype_str = {v: k for k, v in _safetensors_dtype_mapper.items()}
+    bool_state_dict = {}
+    for key, tensor in state_dict.items():
+        if tensor.dtype == torch.bool:
+            bool_state_dict[key] = tensor
+            continue
+        else:
+            size = 1
+            for d in range(tensor.dim()):
+                size *= tensor.shape[d]
+
+            try:
+                bytes = torch.finfo(tensor.dtype).bits // 8
+            except:
+                bytes = torch.iinfo(tensor.dtype).bits // 8
+            size *= bytes
+
+            data_offset_end = data_offset_begin + size
+            meta[key] = {
+                "dtype": _safetensors_dtype_str[tensor.dtype],
+                "shape": tensor.shape,
+                "data_offsets": [data_offset_begin, data_offset_end],
+            }
+            if size > 0:
+                tensors.append(tensor)
+                sizes.append(size)
+                offsets.append(data_offset_begin)
+                data_offset_begin = data_offset_end
+
+    for key, tensor in bool_state_dict.items():
+        size = 1
+        for d in range(tensor.dim()):
+            size *= tensor.shape[d]
+
+        data_offset_end = data_offset_begin + size
+        meta[key] = {
+            "dtype": _safetensors_dtype_str[tensor.dtype],
+            "shape": tensor.shape,
+            "data_offsets": [data_offset_begin, data_offset_end],
+        }
+        if size > 0:
+            tensors.append(tensor)
+            sizes.append(size)
+            offsets.append(data_offset_begin)
+            data_offset_begin = data_offset_end
+    return meta, tensors, sizes, offsets

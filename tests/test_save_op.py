@@ -31,7 +31,8 @@ class TestSave(TestCase):
     def setUpClass(cls):
         cls.tensors_0 = {
             "weight1": torch.randn(2000, 10),
-            "weight2": torch.randn(2000, 10),
+            "weight2": torch.IntTensor(2000, 10),
+            "weight3": torch.BoolTensor(2000, 10),
         }
 
         class MockModel(torch.nn.Module):
@@ -46,6 +47,7 @@ class TestSave(TestCase):
         cls.tempdir = tempfile.TemporaryDirectory()
         cls.filepath_0 = os.path.join(cls.tempdir.name, "model_0.safetensors")
         cls.filepath_1 = os.path.join(cls.tempdir.name, "model_0.pt")
+        cls.filepath_2 = os.path.join(cls.tempdir.name, "model_0_fast.safetensors")
         cls.filepath_3 = os.path.join(cls.tempdir.name, "model_1.safetensors")
 
     @classmethod
@@ -55,7 +57,14 @@ class TestSave(TestCase):
     def test_save_file(self):
         veturboio.save_file(self.tensors_0, self.filepath_0)
         with safe_open(self.filepath_0, framework="pt", device="cpu") as f:
-            assert len(f.keys()) == 2
+            assert len(f.keys()) == 3
+            for key in f.keys():
+                self.assertTrue(torch.allclose(self.tensors_0[key], f.get_tensor(key)))
+
+        # enable fast mode
+        veturboio.save_file(self.tensors_0, self.filepath_2, enable_fast_mode=True)
+        with safe_open(self.filepath_2, framework="pt", device="cpu") as f:
+            assert len(f.keys()) == 3
             for key in f.keys():
                 self.assertTrue(torch.allclose(self.tensors_0[key], f.get_tensor(key)))
 

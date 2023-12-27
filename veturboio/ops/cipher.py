@@ -75,11 +75,17 @@ class SnapdAdapter(HTTPAdapter):
 class DataPipeClient:
     DATAPIPE_SOCKET_PATH = os.getenv('DATAPIPE_SOCKET_PATH', '/finetuned-model/datapipe.sock')
     PING_HEADER = {'X-Datapipe-Task-Type': 'ping'}
-    ENCRYPT_HEADER = {'X-Datapipe-Task-Type': 'encrypt-key'}
+    ENCRYPT_HEADER = {
+        'X-Datapipe-Task-Type': 'encrypt-key',
+        'X-Encrypt-Caller-Pod': os.getenv('POD_NAME', ''),
+        'X-TOS-Path': '',
+    }
     SFCS_STS_HEADER = {'X-Datapipe-Task-Type': 'sfcs-sts'}
     KMS_STS_HEADER = {'X-Datapipe-Task-Type': 'kms-sts'}
+    session = requests.Session()
 
-    def __init__(self, retry: int = 3, interval: float = 0.5) -> None:
+    # Increment datapipe timeout to make it more robust to real scenarios
+    def __init__(self, retry: int = 60, interval: float = 2) -> None:
         if not os.path.exists(self.DATAPIPE_SOCKET_PATH):
             raise RuntimeError(f'Datapipe socket {self.DATAPIPE_SOCKET_PATH} does not exist')
 
@@ -99,8 +105,11 @@ class DataPipeClient:
                 response = self.session.get(self.url, headers=headers)
                 if response.status_code == 200:
                     return response.json()
+                logger.warning(
+                    f'call with {headers}, retry: {re}, code: {response.status_code}, body: {response.text}'
+                )
             except Exception as e:
-                logger.warning(f'call with {headers} return err:  {e}')
+                logger.warning(f'call with {headers}, retry: {re}, raise exception: {e}')
 
             if re > self.retry:
                 break
@@ -109,8 +118,11 @@ class DataPipeClient:
 
         return None
 
-    def get_data_key_iv(self) -> Optional[dict]:
-        return self._get_retry(self.ENCRYPT_HEADER)
+    def get_data_key_iv(self, path: Optional[str] = None) -> Optional[dict]:
+        header = self.ENCRYPT_HEADER.copy()
+        if path:
+            header['X-TOS-Path'] = path
+        return self._get_retry(header)
 
     def get_sfcs_ak_sk_st(self) -> Optional[dict]:
         return self._get_retry(self.SFCS_STS_HEADER)
@@ -211,7 +223,18 @@ class KmsService:
         if uds_proxy:
             session.mount(f'https://{host}', SnapdAdapter(uds_proxy))
             headers['X-Datapipe-Task-Type'] = 'top'
-        resp = session.post(request_url, data=payload, headers=headers)
+        re = 0
+        while True:
+            try:
+                resp = session.post(request_url, data=payload, headers=headers)
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception as e:
+                logger.warning(f'call kms with header: {headers}, return err:  {e}')
+            if re > 3:
+                break
+            sleep(0.5)
+            re += 1
         return resp
 
     def encrypt(self, pt_b64: str) -> str:
@@ -222,7 +245,7 @@ class KmsService:
             'KeyName': self._key_name,
         }
         payload = {'Plaintext': pt_b64}
-        resp = KmsService.sigv4(
+        js = KmsService.sigv4(
             self._ak,
             self._sk,
             self._host,
@@ -234,11 +257,9 @@ class KmsService:
             self._st,
             self._uds_proxy,
         )
-        if resp.status_code == 200:
-            j = resp.json()
-            if 'Result' in j:
-                return resp.json()['Result']['CiphertextBlob']
-        raise RuntimeError(f'kms encrypt failed: {resp.text}')
+        if 'Result' in js and 'CiphertextBlob' in js['Result']:
+            return js['Result']['CiphertextBlob']
+        raise RuntimeError(f'kms encrypt failed response: {js}')
 
     def decrypt(self, ct_b64: str) -> str:
         params = {
@@ -248,7 +269,7 @@ class KmsService:
             'KeyName': self._key_name,
         }
         payload = {'CiphertextBlob': ct_b64}
-        resp = KmsService.sigv4(
+        js = KmsService.sigv4(
             self._ak,
             self._sk,
             self._host,
@@ -260,12 +281,9 @@ class KmsService:
             self._st,
             self._uds_proxy,
         )
-        if resp.status_code == 200:
-            j = resp.json()
-            if 'Result' in j:
-                pt_b64 = resp.json()['Result']['Plaintext']
-                return pt_b64
-        raise RuntimeError(f'kms decrypt failed: {resp.text}')
+        if 'Result' in js and 'Plaintext' in js['Result']:
+            return js['Result']['Plaintext']
+        raise RuntimeError(f'kms decrypt failed response: {js}')
 
 
 class CipherMode(Enum):
@@ -286,12 +304,13 @@ class CipherInfo:
     HEADER_SIZE = 262144
     MAGIC_NUMBER = b'Byte3ncryptM0del'
 
-    def __init__(self, use_cipher: bool, header_bytes: Optional[bytes] = None) -> None:
+    def __init__(self, use_cipher: bool, header_bytes: Optional[bytes] = None, path: Optional[str] = None) -> None:
         self.use_cipher = use_cipher
         self.use_header = False
         self.mode = CipherMode.CTR_128
         self.key = np.frombuffer(b'\x00' * 16, dtype=np.byte)
         self.iv = np.frombuffer(b'\x00' * 16, dtype=np.byte)
+        self.path = path
         if not use_cipher:
             return
 
@@ -319,7 +338,7 @@ class CipherInfo:
         # case 2: get key and iv from datapipe uds
         try:
             client = DataPipeClient()
-            resp = client.get_data_key_iv()
+            resp = client.get_data_key_iv(self.path)
             self.key, self.iv = self.convert_key_iv(resp['Key'], resp['IV'])
             logger.info('get cipher info from datapipe uds successfully!')
             return
@@ -336,9 +355,9 @@ class CipherInfo:
         except Exception as e:
             logger.warning(f'get cipher info from env failed :{e}')
 
-        # fallback to no cipher
-        self.use_cipher = False
-        logger.warning('fail to get key and iv, fallback to no cipher')
+        # raise error
+        logger.error('fail to get cipher info in all cases')
+        raise RuntimeError('fail to get cipher info in all cases')
 
     @staticmethod
     def convert_key_iv(key_b64: str, iv_b64: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -368,7 +387,7 @@ class CipherInfo:
                 ak = resp['Cred']['AccessKeyId']
                 sk = resp['Cred']['SecretAccessKey']
                 st = resp['Cred']['SessionToken']
-                logger.info('get kms credential from datapipe successfully!')
+                logger.info('get kms ak/sk/st from datapipe successfully!')
             except Exception as e:
                 logger.warning(f'get kms ak/sk/st from datapipe failed: {e}')
 
@@ -391,8 +410,8 @@ class CipherInfo:
         return header_bytes
 
 
-def create_cipher_with_header(mode: CipherMode) -> CipherInfo:
-    c = CipherInfo(False)
+def create_cipher_with_header(mode: CipherMode, path: str) -> CipherInfo:
+    c = CipherInfo(False, None, path)
     c.use_cipher = True
     c.use_header = True
     c.mode = mode
@@ -407,6 +426,7 @@ def create_cipher_with_header(mode: CipherMode) -> CipherInfo:
 
 
 def encrypt(cipher_info: CipherInfo, pt: np.ndarray, ct: np.ndarray, offset: int):
+    # note: dtype of pt and ct should be np.uint8
     if not cipher_info.use_cipher:
         logger.warning('cipher.encrypt: use_cipher False, skip')
         return
@@ -417,6 +437,7 @@ def encrypt(cipher_info: CipherInfo, pt: np.ndarray, ct: np.ndarray, offset: int
 
 
 def decrypt(cipher_info: CipherInfo, ct: np.ndarray, pt: np.ndarray, offset: int):
+    # note: dtype of pt and ct should be np.uint8
     if not cipher_info.use_cipher:
         logger.warning('cipher.decrypt: use_cipher False, skip')
         return

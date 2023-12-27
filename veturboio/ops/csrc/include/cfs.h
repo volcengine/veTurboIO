@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef _CLOUDFS_LIBCFS3_CLIENT_CFS_H_
-#define _CLOUDFS_LIBCFS3_CLIENT_CFS_H_
+#ifndef _CLOUDFS_LIBCFS3_CLIENT_CLOUDFS_H_
+#define _CLOUDFS_LIBCFS3_CLIENT_CLOUDFS_H_
 
 #include <errno.h>  /* for EINTERNAL, etc. */
 #include <fcntl.h>  /* for O_RDONLY, O_WRONLY */
@@ -50,7 +50,7 @@ extern "C"
 {
 #endif
     /**
-     * Some utility decls used in libcfs.
+     * Some utility decls used in libcloudfs.
      */
     typedef int32_t tSize;   /// size of data for read/write io ops
     typedef time_t tTime;    /// time type in seconds
@@ -610,12 +610,13 @@ extern "C"
      * blocks long.  The source files are deleted on successful
      * completion.
      *
-     * @param fs    The configured filesystem handle.
-     * @param trg   The path of target (resulting) file
-     * @param scrs  A list of paths to source files
-     * @return      Returns 0 on success, -1 on error.
+     * @param fs       The configured filesystem handle.
+     * @param trg      The path of target (resulting) file
+     * @param scrs     A list of paths to source files
+     * @param srcsNum  Number of source paths
+     * @return         Returns 0 on success, -1 on error.
      */
-    int cfsConcat(cfsFS fs, const char *trg, const char **srcs);
+    int cfsConcat(cfsFS fs, const char *trg, const char **srcs, int srcsNum);
 
     /**
      * cfsGetWorkingDirectory - Get the current working directory for
@@ -798,6 +799,25 @@ extern "C"
     void cfsFreeEncryptionZoneInfo(cfsEncryptionZoneInfo *infos, int numEntries);
 
     /**
+     * cfsFileSystemInfo - Information about a file system
+     */
+    typedef struct
+    {
+        int64_t blockSize;
+        int64_t capacity;
+        int64_t remaining;
+        int64_t inodeCapacity;
+        int64_t inodeRemaining;
+    } cfsFileSytemInfo;
+
+    /**
+     * cfsGetFileSystemInfo - Get cloudfs filesystem information
+     * @param fs    The configured filesystem handle.
+     * @return filesystem file info
+     */
+    cfsFileSytemInfo cfsGetFileSystemInfo(cfsFS fs);
+
+    /**
      * cfsGetHosts - Get hostnames where a particular block (determined by
      * pos & blocksize) of a file is stored. The last element in the array
      * is NULL. Due to replication, a single block could be present on
@@ -947,7 +967,7 @@ extern "C"
      * cfsGetHANamenodes - If cfs is configured with HA namenode, return all namenode informations as an array.
      * Else return NULL.
      *
-     * Using configure file which is given by environment parameter LIBCFS_CONF
+     * Using configure file which is given by environment parameter LIBCLOUDFS_CONF
      * or "cloudfs.xml" in working directory.
      *
      * @param nameservice   cfs name service id.
@@ -1184,8 +1204,50 @@ extern "C"
      */
     void cfsCancelJob(cfsFS fs, const char *job_id);
 
+    typedef struct cfsReplicaPolicy
+    {
+        char *dcNames; // "name whit ',' split"
+        bool distributed;
+        bool randomMajority;
+        int32_t localSwitchTarget;
+        int32_t otherSwitchTarget;
+    } cfsReplicaPolicy;
+
+    typedef struct cfsReadPolicy
+    {
+        bool localDcOnly;
+        char *dcNames; // Name of Datacenter, split by ','
+    } cfsReadPolicy;
+
+    typedef struct cfsUploadPolicy
+    {
+        int32_t uploadIntervalMs;
+    } cfsUploadPolicy;
+
+    typedef struct cfsPolicyResponse
+    {
+        char *path;
+        cfsReplicaPolicy *replicaPolicy;
+        cfsReadPolicy *readPolicy;
+        cfsUploadPolicy *uploadPolicy;
+    } cfsPolicyResponse;
+
+    int cfsSetPolicy(cfsFS fs, const char *path, cfsReplicaPolicy *replicaPolicy, cfsReadPolicy *readPolicy,
+                     cfsUploadPolicy *uploadPolicy);
+
+    cfsPolicyResponse *cfsRemovePolicy(cfsFS fs, const char *path, bool removeReplicaPolicy, bool removeReadpolicy,
+                                       bool removeUploadPolicy);
+
+    cfsPolicyResponse *cfsGetPolicy(cfsFS fs, const char *path, bool isReplicaPolicy, bool isReadpolicy,
+                                    bool isUploadPolicy);
+
+    cfsPolicyResponse *cfsListPolicy(cfsFS fs, int *numEntries, bool isReplicaPolicy, bool isReadpolicy,
+                                     bool isUploadPolicy);
+
+    void cfsFreePolicyResponse(cfsPolicyResponse *resp, int numEntries);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _CLOUDFS_LIBCFS3_CLIENT_CFS_H_ */
+#endif /* _CLOUDFS_LIBCFS3_CLIENT_CLOUDFS_H_ */

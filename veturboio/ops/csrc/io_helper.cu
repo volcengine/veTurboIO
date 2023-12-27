@@ -60,84 +60,66 @@ void IOHelper::free_buffer()
     }
 }
 
-void read_unaligned_part(std::string file_path, torch::Tensor res_tensor, int64_t *offset, int64_t device_id,
-                         size_t *total_size, bool use_sfcs_sdk, bool use_direct_io, size_t *read_unaligned_size,
-                         CipherInfo cipher_info)
+void read_unaligned_part_gpu(std::string file_path, torch::Tensor res_tensor, int64_t *offset, int64_t device_id,
+                             size_t *total_size, bool use_sfcs_sdk, bool use_direct_io, size_t *read_unaligned_size,
+                             CipherInfo cipher_info)
 {
     // cpu align only read head part, while gpu align read both head and tail part
     if (device_id < 0)
     {
-        // head is aligned
-        if ((*offset & (BUF_ALIGN_SIZE - 1)) == 0)
-        {
-            return;
-        }
-        *read_unaligned_size = min(BUF_ALIGN_SIZE - (*offset & (BUF_ALIGN_SIZE - 1)), *total_size);
-        if ((uint64_t)res_tensor.data_ptr() % BUF_ALIGN_SIZE != *offset % BUF_ALIGN_SIZE)
-        {
-            throw std::runtime_error("data ptr does not satisfy the align purpose");
-        }
-        read_file(file_path, (char *)res_tensor.data_ptr(), device_id, NULL, 1, *read_unaligned_size, *offset,
-                  use_sfcs_sdk, use_direct_io, cipher_info);
-
-        *total_size -= *read_unaligned_size;
-        *offset += *read_unaligned_size;
+        throw std::runtime_error("read_unaligned_part_gpu only support gpu device");
     }
-    else
+    size_t end_offset = *offset + *total_size;
+    // both head and tail are aligned
+    if ((*offset & (BUF_ALIGN_SIZE - 1)) == 0 && ((end_offset) & (BUF_ALIGN_SIZE - 1)) == 0)
     {
-        size_t end_offset = *offset + *total_size;
-        // both head and tail are aligned
-        if ((*offset & (BUF_ALIGN_SIZE - 1)) == 0 && ((end_offset) & (BUF_ALIGN_SIZE - 1)) == 0)
-        {
-            return;
-        }
-        char tmp_buf_head[BUF_ALIGN_SIZE] = {};
-        char tmp_buf_tail[BUF_ALIGN_SIZE] = {};
-        cudaSetDevice(device_id);
-        // read head unaligned
-        if ((*offset & (BUF_ALIGN_SIZE - 1)) != 0)
-        {
-            size_t read_head_size = min(BUF_ALIGN_SIZE - (*offset & (BUF_ALIGN_SIZE - 1)), *total_size);
-            read_file(file_path, tmp_buf_head, device_id, (char *)res_tensor.data_ptr(), 1, read_head_size, *offset,
-                      use_sfcs_sdk, use_direct_io, cipher_info);
-            *read_unaligned_size = read_head_size;
-            *offset += read_head_size;
-            *total_size -= read_head_size;
-        }
-        // read tail unaligned
-        if (*total_size > 0 && (end_offset & (BUF_ALIGN_SIZE - 1)) != 0)
-        {
-            size_t tail_offset = end_offset - (end_offset & (BUF_ALIGN_SIZE - 1));
-            size_t tensor_offset = tail_offset - *offset + *read_unaligned_size;
-            read_file(file_path, tmp_buf_tail, device_id, (char *)res_tensor.data_ptr() + tensor_offset, 1,
-                      end_offset - tail_offset, tail_offset, use_sfcs_sdk, use_direct_io, cipher_info);
-            *total_size -= end_offset - tail_offset;
-        }
-        cudaDeviceSynchronize();
+        return;
     }
+    char tmp_buf_head[BUF_ALIGN_SIZE] = {};
+    char tmp_buf_tail[BUF_ALIGN_SIZE] = {};
+    // read head unaligned
+    cudaSetDevice(device_id);
+    if ((*offset & (BUF_ALIGN_SIZE - 1)) != 0)
+    {
+        size_t read_head_size = min(BUF_ALIGN_SIZE - (*offset & (BUF_ALIGN_SIZE - 1)), *total_size);
+        read_file(file_path, tmp_buf_head, device_id, (char *)res_tensor.data_ptr(), 1, read_head_size, *offset,
+                  use_sfcs_sdk, use_direct_io, cipher_info);
+        *read_unaligned_size = read_head_size;
+        *offset += read_head_size;
+        *total_size -= read_head_size;
+    }
+    // read tail unaligned
+    if (*total_size > 0 && (end_offset & (BUF_ALIGN_SIZE - 1)) != 0)
+    {
+        size_t tail_offset = end_offset - (end_offset & (BUF_ALIGN_SIZE - 1));
+        size_t tensor_offset = tail_offset - *offset + *read_unaligned_size;
+        read_file(file_path, tmp_buf_tail, device_id, (char *)res_tensor.data_ptr() + tensor_offset, 1,
+                  end_offset - tail_offset, tail_offset, use_sfcs_sdk, use_direct_io, cipher_info);
+        *total_size -= end_offset - tail_offset;
+    }
+    cudaDeviceSynchronize();
 }
 
-void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tensor, torch::Tensor sample_tensor,
-                                   int64_t offset, int64_t device_id, int64_t num_thread, bool use_pinmem,
-                                   bool use_sfcs_sdk, bool use_direct_io, bool use_cipher,
-                                   pybind11::array_t<char> key_arr, pybind11::array_t<char> iv_arr, int64_t header_size)
+void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tensor, size_t length, int64_t offset,
+                                   int64_t device_id, int64_t num_thread, bool use_pinmem, bool use_sfcs_sdk,
+                                   bool use_direct_io, bool use_cipher, pybind11::array_t<char> key_arr,
+                                   pybind11::array_t<char> iv_arr, int64_t header_size)
 {
     size_t file_size = get_file_size(file_path.c_str(), use_sfcs_sdk);
-    size_t total_size = file_size - offset;
     size_t read_unaligned_size = 0;
+    size_t total_size = length > 0 ? length : file_size - offset;
     // set cipher
     CipherInfo cipher_info(use_cipher, key_arr, iv_arr, header_size);
     if (device_id < 0)
     {
-        read_unaligned_part(file_path, res_tensor, &offset, device_id, &total_size, use_sfcs_sdk, use_direct_io,
-                            &read_unaligned_size, cipher_info);
         read_file(file_path, (char *)res_tensor.data_ptr() + read_unaligned_size, device_id, NULL, num_thread,
                   total_size, offset, use_sfcs_sdk, use_direct_io, cipher_info);
     }
     else
     {
-        read_unaligned_part(file_path, res_tensor, &offset, device_id, &total_size, use_sfcs_sdk, use_direct_io,
-                            &read_unaligned_size, cipher_info);
+        // read unaligned part first, since GPU can only decrypt data in integral multiple of 16 Bytes
+        read_unaligned_part_gpu(file_path, res_tensor, &offset, device_id, &total_size, use_sfcs_sdk, use_direct_io,
+                                &read_unaligned_size, cipher_info);
 
         // change use_pinmem attribute may introduce ambiguity
         if (buffer_size_ > 0 && use_pinmem != use_pinmem_)
@@ -169,8 +151,12 @@ void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tens
                 iv[i] = cipher_info.iv[i];
             }
             counter_inc_by(iv, AES_BLOCK_SIZE, (offset - cipher_info.header_size) / AES_BLOCK_SIZE);
-            unsigned char *iv_gpu;
+            unsigned char *iv_gpu = NULL;
             cudaMalloc((void **)&iv_gpu, AES_BLOCK_SIZE);
+            if (iv_gpu == NULL)
+            {
+                throw std::runtime_error("iv_gpu cannot be allocated");
+            }
             cudaMemcpy(iv_gpu, iv, AES_BLOCK_SIZE, cudaMemcpyHostToDevice);
             unsigned char *ct = reinterpret_cast<unsigned char *>(res_tensor.data_ptr()) + read_unaligned_size;
             int cipher_ret = ctr_decrypt_gpu(cipher_info.mode, cipher_info.key, iv_gpu, ct, total_size, ct);
@@ -181,5 +167,54 @@ void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tens
             cudaDeviceSynchronize();
             cudaFree(iv_gpu);
         }
+    }
+}
+
+void IOHelper::save_tensor_to_file(torch::Tensor tensor, std::string file_path, size_t length, bool use_pinmem,
+                                   bool use_sfcs_sdk, bool use_cipher, pybind11::array_t<char> key_arr,
+                                   pybind11::array_t<char> iv_arr, int64_t header_size)
+{
+    char *buf;
+
+    CipherInfo cipher_info(use_cipher, key_arr, iv_arr, header_size);
+    if (tensor.device().is_cuda() || use_cipher)
+    {
+        // change use_pinmem attribute may introduce ambiguity
+        if (buffer_size_ > 0 && use_pinmem != use_pinmem_)
+        {
+            throw std::runtime_error("use_pinmem attribute of an exising IOHelper should not be changed");
+        }
+
+        if (pin_mem == NULL || length > buffer_size_)
+        {
+            init_buffer(file_path, length, use_pinmem, use_sfcs_sdk);
+        }
+
+        buf = pin_mem;
+        if (tensor.device().is_cuda())
+        {
+            cudaSetDevice(tensor.device().index());
+            cudaMemcpyAsync(buf, (char *)tensor.data_ptr(), length, cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+        }
+        else
+        {
+            memcpy(buf, (char *)tensor.data_ptr(), length);
+        }
+    }
+    else
+    {
+        buf = (char *)tensor.data_ptr();
+    }
+
+    if (use_sfcs_sdk)
+    {
+        SFCSFile sfcs_file(file_path, cipher_info);
+        sfcs_file.write_file_from_addr(buf, length, 0, true);
+    }
+    else
+    {
+        POSIXFile posix_file(file_path, cipher_info);
+        posix_file.write_file_from_addr(buf, length, true);
     }
 }

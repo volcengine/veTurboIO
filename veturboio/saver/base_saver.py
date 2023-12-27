@@ -24,6 +24,8 @@ from safetensors.torch import save_file as safetenors_save_file
 from safetensors.torch import save_model as safetensors_save_model
 
 from veturboio.ops.cipher import CipherInfo, CipherMode, create_cipher_with_header, encrypt
+from veturboio.ops.io_utils import IOHelper
+from veturboio.ops.io_utils import save_file as fast_save_file
 from veturboio.types import FILE_PATH
 
 
@@ -39,31 +41,44 @@ class BaseSaver:
 
 
 class PosixSaver(BaseSaver):
-    def __init__(self, file: FILE_PATH, use_cipher: bool = False) -> None:
+    def __init__(self, file: FILE_PATH, helper: IOHelper = None, use_cipher: bool = False) -> None:
         super().__init__(method="posix")
         self.file = file
         use_cipher = use_cipher or os.getenv("VETURBOIO_USE_CIPHER", "0") == "1"
         use_header = use_cipher and os.getenv("VETURBOIO_CIPHER_HEADER", "0") == "1"
         if use_header:
-            self.cipher_info = create_cipher_with_header(CipherMode.CTR_128)
+            self.cipher_info = create_cipher_with_header(CipherMode.CTR_128, os.path.abspath(self.file))
         else:
-            self.cipher_info = CipherInfo(use_cipher)
+            self.cipher_info = CipherInfo(use_cipher, None, os.path.abspath(self.file))
 
-    def save_file(self, state_dict: Dict[str, torch.Tensor], metadata: Dict[str, str] = None) -> None:
-        if self.cipher_info.use_cipher:
-            with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpfile:
-                tmp_file_path = tmpfile.name
-                safetenors_save_file(state_dict, tmp_file_path, metadata=metadata)
-                tmp_file_size = os.path.getsize(tmp_file_path)
-                tmp_file_bytes = np.memmap(tmp_file_path, dtype=np.uint8, mode='r', shape=tmp_file_size)
-                h_off = CipherInfo.HEADER_SIZE if self.cipher_info.use_header else 0
-                file_bytes = np.memmap(self.file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
-                encrypt(self.cipher_info, tmp_file_bytes, file_bytes[h_off:], 0)
-                if h_off:
-                    file_bytes[:h_off] = np.frombuffer(self.cipher_info.to_header_bytes(), dtype=np.uint8)
-                file_bytes.flush()
+        self.helper = helper
+
+    def save_file(
+        self, state_dict: Dict[str, torch.Tensor], metadata: Dict[str, str] = None, enable_fast_mode: bool = False
+    ) -> None:
+        if enable_fast_mode:
+            fast_save_file(
+                state_dict,
+                self.file,
+                helper=self.helper,
+                metadata=metadata,
+                cipher_info=self.cipher_info,
+            )
         else:
-            safetenors_save_file(state_dict, self.file, metadata=metadata)
+            if self.cipher_info.use_cipher:
+                with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpfile:
+                    tmp_file_path = tmpfile.name
+                    safetenors_save_file(state_dict, tmp_file_path, metadata=metadata)
+                    tmp_file_size = os.path.getsize(tmp_file_path)
+                    tmp_file_bytes = np.memmap(tmp_file_path, dtype=np.uint8, mode='r', shape=tmp_file_size)
+                    h_off = CipherInfo.HEADER_SIZE if self.cipher_info.use_header else 0
+                    file_bytes = np.memmap(self.file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
+                    encrypt(self.cipher_info, tmp_file_bytes, file_bytes[h_off:], 0)
+                    if h_off:
+                        file_bytes[:h_off] = np.frombuffer(self.cipher_info.to_header_bytes(), dtype=np.uint8)
+                    file_bytes.flush()
+            else:
+                safetenors_save_file(state_dict, self.file, metadata=metadata)
 
     def save_model(self, model: torch.nn.Module) -> None:
         if self.cipher_info.use_cipher:

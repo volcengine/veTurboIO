@@ -18,8 +18,8 @@ import os
 
 from loguru import logger
 
-LIBCFS_DEFAULT_URL = "https://veturbo-cn-beijing.tos-cn-beijing.volces.com/veturboio/libcfs/libcfs.so"
-LIBCFS_DEFAULT_PATH = "/usr/lib/libcfs.so"
+LIBCFS_DEFAULT_URL = "https://veturbo-cn-beijing.tos-cn-beijing.volces.com/veturboio/libcfs/libcloudfs.so"
+LIBCFS_DEFAULT_PATH = "/usr/lib/libcloudfs.so"
 
 
 def load_libcfs():
@@ -29,7 +29,7 @@ def load_libcfs():
         import requests
 
         libcfs_url = os.getenv("LIBCFS_URL", LIBCFS_DEFAULT_URL)
-        logger.info(f"download libcfs.so from {libcfs_url}, save to {libcfs_path}")
+        logger.info(f"download libcloudfs.so from {libcfs_url}, save to {libcfs_path}")
         r = requests.get(libcfs_url, timeout=60)
         with open(libcfs_path, 'wb') as f:
             f.write(r.content)

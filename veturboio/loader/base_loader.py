@@ -37,7 +37,12 @@ class BaseLoader:
     def load_to_bytes(self, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)) -> bytes:
         raise NotImplementedError
 
-    def load_safetensors(self, safetensors_file: Any, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
+    def load_safetensors(
+        self,
+        safetensors_file: Any,
+        map_location: str = "cpu",
+        state_dict: Dict[str, torch.Tensor] = None,
+    ) -> Dict[str, torch.Tensor]:
         raise NotImplementedError
 
     def init_aligned_tensor(self, device, device_id: int, file_size, base_offset: int) -> torch.Tensor:
@@ -74,20 +79,24 @@ class PosixLoader(BaseLoader):
             decrypt(cipher_info, arr, arr, offset - h_off)
         return arr.tobytes()
 
-    def load_safetensors(self, safetensors_file: Any, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
-        state_dict = {}
+    def load_safetensors(
+        self,
+        safetensors_file: Any,
+        map_location: str = "cpu",
+        state_dict: Dict[str, torch.Tensor] = None,
+    ) -> Dict[str, torch.Tensor]:
+        if not state_dict:
+            state_dict = {}
 
         base_offset = safetensors_file.tensor_offset
         device = torch.device(map_location)
 
         cipher_info = safetensors_file._cipher_info
-        mp_mode = "c" if cipher_info.use_cipher else "r"
-
         for tensor_meta in safetensors_file.meta.values():
             tensor_bytes = np.memmap(
                 safetensors_file.file,
                 dtype=np.uint8,
-                mode=mp_mode,
+                mode="c",
                 offset=base_offset + tensor_meta.data_offsets[0],
                 shape=tensor_meta.data_offsets[1] - tensor_meta.data_offsets[0],
             )
