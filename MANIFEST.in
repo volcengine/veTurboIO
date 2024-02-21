@@ -1,0 +1,3 @@
+include veturboio/ops/csrc/lib/*.so
+include veturboio/ops/csrc/lib/*.so.*
+include veturboio/ops/csrc/include/*.h
