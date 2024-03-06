@@ -110,6 +110,7 @@ setup(
         "numpy",
         "loguru",
         "requests-unixsocket",
+        "requests",
     ],
     include_package_data=True,
     cmdclass={"build_ext": BuildExtension},

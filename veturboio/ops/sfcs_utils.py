@@ -28,8 +28,9 @@ from loguru import logger
 from veturboio.ops.cipher import CipherInfo, DataPipeClient
 
 try:
-    import veturboio_ext
+    from veturboio.utils.load_veturboio_ext import load_veturboio_ext
 
+    veturboio_ext = load_veturboio_ext()
     SFCSFile = veturboio_ext.SFCSFile
 except ImportError:
     SFCSFile = None
