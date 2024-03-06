@@ -16,6 +16,7 @@ Tips: 该指令会优先下载与当前 Python、PyTorch 版本匹配的 whl 文
 如果已经安装失败，可以尝试通过下载源码进行安装：
 ```bash
 cd veturboio
+python setup.py get_libcfs
 python setup.py install
 ```
 

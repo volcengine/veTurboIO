@@ -15,12 +15,14 @@ limitations under the License.
 '''
 
 import os
-import torch
-from setuptools import find_packages, setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CppExtension
 import platform
 
+import requests
+import setuptools
+import torch
 from pkg_resources import parse_version
+from setuptools import find_packages, setup
+from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
 
 # initialize variables for compilation
 IS_LINUX = platform.system() == "Linux"
@@ -98,6 +100,28 @@ def get_veturboio_extension():
     )
 
 
+class GetLibCfsCommand(setuptools.Command):
+    """get libcfs from url"""
+
+    description = 'get libcfs from url'
+    user_options = [('src=', 's', 'source url of libcfs.so'), ('dst=', 'd', 'dest filepath of libcfs.so')]
+
+    def initialize_options(self):
+        from veturboio.utils.load_veturboio_ext import LIBCFS_DEFAULT_PATH, LIBCFS_DEFAULT_URL
+
+        self.src = LIBCFS_DEFAULT_URL
+        self.dst = LIBCFS_DEFAULT_PATH
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        print(f"download libcfs.so from {self.src}, save to {self.dst}")
+        r = requests.get(self.src, timeout=60)
+        with open(self.dst, 'wb') as f:
+            f.write(r.content)
+
+
 setup(
     name="veturboio",
     version=get_version(),
@@ -113,5 +137,5 @@ setup(
         "requests",
     ],
     include_package_data=True,
-    cmdclass={"build_ext": BuildExtension},
+    cmdclass={"get_libcfs": GetLibCfsCommand, "build_ext": BuildExtension},
 )
