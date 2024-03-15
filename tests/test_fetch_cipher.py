@@ -44,8 +44,28 @@ class UnixSocketHttpServer(socketserver.UnixStreamServer):
 
 
 class DatapipeHandler(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):
+        action = self.headers.get('X-Datapipe-Task-Type')
+        if action == 'top':
+            # mock kms response
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            res = {'Result': {'Plaintext': base64.b64encode(b'abcdefgh87654321').decode('ascii')}}
+            self.wfile.write(bytes(json.dumps(res), encoding='ascii'))
+            return
+        self.send_response(400)
+        self.end_headers()
+        return
+
     def do_GET(self):
         action = self.headers.get('X-Datapipe-Task-Type')
+        if action == 'ping':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps({'message': 'pong'}), encoding='ascii'))
+            return
         if action == 'encrypt-key':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -74,6 +94,19 @@ class DatapipeHandler(http.server.SimpleHTTPRequestHandler):
             }
             self.wfile.write(bytes(json.dumps(res), encoding='ascii'))
             return
+        if action == 'kms-sts':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            res = {
+                'Cred': {
+                    'AccessKeyId': os.environ['CI_VENDOR_AK'],
+                    'SecretAccessKey': os.environ['CI_VENDOR_AK'],
+                    'SessionToken': '',
+                },
+            }
+            self.wfile.write(bytes(json.dumps(res), encoding='ascii'))
+            return
         self.send_response(400)
         self.end_headers()
         return
@@ -92,7 +125,54 @@ class TestCipherInfo(TestCase):
         cls.thread = threading.Thread(target=run)
         cls.thread.start()
         cls.target_key = np.frombuffer(b'abcdefgh12345678', dtype=np.byte)
+        cls.target_key_2 = np.frombuffer(b'abcdefgh87654321', dtype=np.byte)
         cls.target_iv = np.frombuffer(b'1234567887654321', dtype=np.byte)
+
+    def test_fetch_from_file_header(self):
+        os.environ.pop('VETURBOIO_KEY', None)
+        os.environ.pop('VETURBOIO_IV', None)
+        DataPipeClient.DATAPIPE_SOCKET_PATH = '/path/not/exist'
+
+        header_dict = {
+            'mode': 'CTR-128',
+            'iv': 'MTIzNDU2Nzg4NzY1NDMyMQ==',
+            'meta_data_key': 'bl2htKYLQ2+CjyyJ84Q3twAA9ZpCbFxwznRb0NkR9zGGRp1RK5Mb9u8NNOiahY+0yVrxNw3IVQ9Wgn6PDscw77Cb3eImjVn14hNBJRlwtSyQ7tRZLOsZBEHv5cWwDQ==',
+        }
+        header_bytes = bytearray(256 * 1024)
+        header_str = 'Byte3ncryptM0del' + json.dumps(header_dict)
+        header_bytes[: len(header_str)] = header_str.encode('utf-8')
+
+        # case1: get kms cred from env
+        ENV_KMS_HOST = 'VETURBOIO_KMS_HOST'
+        ENV_KMS_REGION = 'VETURBOIO_KMS_REGION'
+        ENV_KMS_AK = 'VETURBOIO_KMS_ACCESS_KEY'
+        ENV_KMS_SK = 'VETURBOIO_KMS_SECRET_KEY'
+        ENV_KMS_KEYRING = 'VETURBOIO_KMS_KEYRING_NAME'
+        ENV_KMS_KEY = 'VETURBOIO_KMS_KEY_NAME'
+        os.environ[ENV_KMS_HOST] = 'open.volcengineapi.com'
+        os.environ[ENV_KMS_REGION] = 'cn-beijing'
+        os.environ[ENV_KMS_AK] = os.environ['CI_VENDOR_AK']
+        os.environ[ENV_KMS_SK] = os.environ['CI_VENDOR_SK']
+        os.environ[ENV_KMS_KEYRING] = 'datapipe_keyring'
+        os.environ[ENV_KMS_KEY] = 'datapipe_key_ml_maas'
+        info = CipherInfo(True, header_bytes)
+        self.assertTrue(info.use_cipher)
+        self.assertTrue(info.use_header)
+        self.assertTrue(np.array_equal(info.key, self.target_key))
+        self.assertTrue(np.array_equal(info.iv, self.target_iv))
+
+        # case2: get kms cred from datapipe and access kms with datapipe proxy
+        os.environ.pop(ENV_KMS_HOST, None)
+        os.environ.pop(ENV_KMS_REGION, None)
+        os.environ.pop(ENV_KMS_AK, None)
+        os.environ.pop(ENV_KMS_SK, None)
+        DataPipeClient.DATAPIPE_SOCKET_PATH = self.server_address
+        info = CipherInfo(True, header_bytes)
+        info = CipherInfo(True, header_bytes)
+        self.assertTrue(info.use_cipher)
+        self.assertTrue(info.use_header)
+        self.assertTrue(np.array_equal(info.key, self.target_key_2))
+        self.assertTrue(np.array_equal(info.iv, self.target_iv))
 
     def test_fetch_from_datapipe(self):
         DataPipeClient.DATAPIPE_SOCKET_PATH = self.server_address
@@ -103,8 +183,8 @@ class TestCipherInfo(TestCase):
 
     def test_fetch_from_env(self):
         DataPipeClient.DATAPIPE_SOCKET_PATH = '/path/not/exist'
-        os.environ['VETUROIO_KEY'] = base64.b64encode(b'abcdefgh12345678').decode('ascii')
-        os.environ['VETUROIO_IV'] = base64.b64encode(b'1234567887654321').decode('ascii')
+        os.environ['VETURBOIO_KEY'] = base64.b64encode(b'abcdefgh12345678').decode('ascii')
+        os.environ['VETURBOIO_IV'] = base64.b64encode(b'1234567887654321').decode('ascii')
         info = CipherInfo(True)
         self.assertTrue(info.use_cipher)
         self.assertTrue(np.array_equal(info.key, self.target_key))
@@ -112,15 +192,15 @@ class TestCipherInfo(TestCase):
 
     def test_fallback(self):
         DataPipeClient.DATAPIPE_SOCKET_PATH = '/path/not/exist'
-        os.environ['VETUROIO_KEY'] = base64.b64encode(b'abcdefgh12').decode('ascii')
-        os.environ['VETUROIO_IV'] = base64.b64encode(b'1234567887').decode('ascii')
+        os.environ['VETURBOIO_KEY'] = base64.b64encode(b'abcdefgh12').decode('ascii')
+        os.environ['VETURBOIO_IV'] = base64.b64encode(b'1234567887').decode('ascii')
         info = CipherInfo(True)
         self.assertFalse(info.use_cipher)
 
     @classmethod
     def tearDownClass(cls):
-        os.environ.pop('VETUROIO_KEY', None)
-        os.environ.pop('VETUROIO_IV', None)
+        os.environ.pop('VETURBOIO_KEY', None)
+        os.environ.pop('VETURBOIO_IV', None)
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join()

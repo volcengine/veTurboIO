@@ -91,11 +91,9 @@ class CredentialsHelper:
                     self.thread = threading.Thread(target=self.refresh_loop, daemon=True)
                     self.stop_flag = threading.Event()
                     self.client = DataPipeClient()
-                    if not self.client.session:
-                        raise RuntimeError('Datapipe client initialization failed in credentials helper')
                     self.sfcs_conf_path = sfcs_conf_path
                     if not self.do_refresh():
-                        raise RuntimeError('Credentials helper do refresh failed')
+                        raise RuntimeError('Credentials helper first fetch failed')
                     self.thread.start()
                     self.running = True
                     logger.info('CredentialsHelper refresh thread strat')
@@ -240,12 +238,24 @@ def sfcs_read_file(
     num_thread: Optional[int] = 1,
     cipher_info: CipherInfo = CipherInfo(False),
 ) -> int:
-    sfcs_file = SFCSFile(file_path, cipher_info.use_cipher, cipher_info.key, cipher_info.iv)
+    sfcs_file = SFCSFile(
+        file_path,
+        cipher_info.use_cipher,
+        cipher_info.key,
+        cipher_info.iv,
+        CipherInfo.HEADER_SIZE if cipher_info.use_header else 0,
+    )
     return sfcs_file.read_file_to_array(arr, length, offset, num_thread)
 
 
 def sfcs_write_file(file_path: str, arr: np.ndarray, length: int, cipher_info: CipherInfo = CipherInfo(False)) -> int:
-    sfcs_file = SFCSFile(file_path, cipher_info.use_cipher, cipher_info.key, cipher_info.iv)
+    sfcs_file = SFCSFile(
+        file_path,
+        cipher_info.use_cipher,
+        cipher_info.key,
+        cipher_info.iv,
+        CipherInfo.HEADER_SIZE if cipher_info.use_header else 0,
+    )
     return sfcs_file.write_file_from_array(arr, length)
 
 

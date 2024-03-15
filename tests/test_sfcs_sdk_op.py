@@ -83,24 +83,38 @@ class TestSFCSLoad(TestCase):
     def setUpClass(cls):
         init_sfcs_env()
 
-        os.environ['VETUROIO_KEY'] = base64.b64encode(b'abcdefgh12345678').decode('ascii')
-        os.environ['VETUROIO_IV'] = base64.b64encode(b'1234567887654321').decode('ascii')
+        # key / iv
+        os.environ['VETURBOIO_KEY'] = base64.b64encode(b'abcdefgh12345678').decode('ascii')
+        os.environ['VETURBOIO_IV'] = base64.b64encode(b'1234567887654321').decode('ascii')
+        # kms info
+        ENV_KMS_HOST = 'VETURBOIO_KMS_HOST'
+        ENV_KMS_REGION = 'VETURBOIO_KMS_REGION'
+        ENV_KMS_AK = 'VETURBOIO_KMS_ACCESS_KEY'
+        ENV_KMS_SK = 'VETURBOIO_KMS_SECRET_KEY'
+        ENV_KMS_KEYRING = 'VETURBOIO_KMS_KEYRING_NAME'
+        ENV_KMS_KEY = 'VETURBOIO_KMS_KEY_NAME'
+        os.environ[ENV_KMS_HOST] = 'open.volcengineapi.com'
+        os.environ[ENV_KMS_REGION] = 'cn-beijing'
+        os.environ[ENV_KMS_AK] = os.environ['CI_VENDOR_AK']
+        os.environ[ENV_KMS_SK] = os.environ['CI_VENDOR_SK']
+        os.environ[ENV_KMS_KEYRING] = 'datapipe_keyring'
+        os.environ[ENV_KMS_KEY] = 'datapipe_key_ml_maas'
 
         cls.filepath_0 = "sfcs://model.safetensors"
         cls.filepath_1 = "sfcs://model.pt"
         # mock /tmp as efs mount path
         cls.filepath_2 = "/model.safetensors"
         cls.tensors_0 = {
-            "weight1": torch.ones(50, 50),
-            "weight2": torch.zeros(50, 50),
+            "weight1": torch.ones(500, 50),
+            "weight2": torch.zeros(500, 50),
         }
 
         class MockModel(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
 
-                self.linear1 = torch.nn.Linear(50, 50)
-                self.linear2 = torch.nn.Linear(50, 50)
+                self.linear1 = torch.nn.Linear(500, 50)
+                self.linear2 = torch.nn.Linear(500, 50)
 
         cls.model = MockModel()
 
@@ -148,3 +162,14 @@ class TestSFCSLoad(TestCase):
     def test_pipeline_cuda(self):
         self._run_pipeline(self.cuda_tensors_0, self.cuda_model, "cuda:0", use_cipher=False)
         self._run_pipeline(self.cuda_tensors_0, self.cuda_model, "cuda:0", use_cipher=True)
+
+    def test_pipeline_cipher_header_cpu(self):
+        os.environ["VETURBOIO_CIPHER_HEADER"] = "1"
+        self._run_pipeline(self.tensors_0, self.model, "cpu", use_cipher=True)
+        del os.environ["VETURBOIO_CIPHER_HEADER"]
+
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA not available")
+    def test_pipeline_cipher_header_cuda(self):
+        os.environ["VETURBOIO_CIPHER_HEADER"] = "1"
+        self._run_pipeline(self.cuda_tensors_0, self.cuda_model, "cuda:0", use_cipher=True)
+        del os.environ["VETURBOIO_CIPHER_HEADER"]

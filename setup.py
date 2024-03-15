@@ -80,7 +80,7 @@ def get_veturboio_extension():
 
     include_dirs = ["veturboio/ops/csrc/include"]
     library_dirs = ["veturboio/ops/csrc/lib"]
-    libraries = ["cfs", "fastcrypto"]
+    libraries = ["cfs", ":libfastcrypto_gpu.so.0.3"]
     extra_link_args = [make_relative_rpath("veturboio/ops/csrc/lib")]
 
     return CUDAExtension(
@@ -90,6 +90,7 @@ def get_veturboio_extension():
             "veturboio/ops/csrc/load_utils.cpp",
             "veturboio/ops/csrc/sfcs.cpp",
             "veturboio/ops/csrc/io_helper.cu",
+            "veturboio/ops/csrc/cipher.cpp",
         ],
         define_macros=define_macros,
         include_dirs=include_dirs,

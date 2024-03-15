@@ -58,7 +58,7 @@ def load(
         use_pinmem (bool, optional): use pin memory. Defaults to False.
         num_thread (int, optional): number of threads. Defaults to 32.
         use_direct_io (bool, optional): open file in direct io mode. Defaults to False.
-        use_cipher (bool, optional): decrypt file when use sfcs sdk. Defaults to False.
+        use_cipher (bool, optional): decrypt file. Defaults to False.
 
     Returns:
         state_dict (Dict): state dict
@@ -84,7 +84,6 @@ def load(
             num_thread=num_thread,
             use_pinmem=use_pinmem,
             use_direct_io=use_direct_io,
-            use_cipher=use_cipher,
         )
     else:
         loader = FasterPosixLoader(
@@ -94,7 +93,7 @@ def load(
             use_direct_io=use_direct_io,
         )
 
-    safetensors_file = SafetensorsFile(file, loader)
+    safetensors_file = SafetensorsFile(file, loader, use_cipher)
     return safetensors_file.load(map_location=map_location)
 
 
@@ -114,7 +113,7 @@ def save_file(
         force_contiguous (bool, optional): force contiguous. Defaults to True.
         force_save_shared_tensor (bool, optional): force save shared tensor. Defaults to False.
         metadata (Dict[str, str], optional): metadata. Defaults to None.
-        use_cipher (bool, optional): decrypt file when use sfcs sdk. Defaults to False.
+        use_cipher (bool, optional): decrypt file. Defaults to False.
 
     Examples:
         ```
@@ -129,7 +128,7 @@ def save_file(
     if use_sfcs_sdk:
         saver = SfcsClientSaver(use_cipher=use_cipher)
     else:
-        saver = PosixSaver()
+        saver = PosixSaver(use_cipher=use_cipher)
 
     # TODO: there are some bugs while state_dict is loaded from veturboio
     if not force_save_shared_tensor:
@@ -164,7 +163,7 @@ def save_model(model: torch.nn.Module, file: FILE_PATH, use_cipher: Optional[boo
     Args:
         model (torch.nn.Module): model
         file (FILE_PATH): file path
-        use_cipher (bool, optional): decrypt file when use sfcs sdk. Defaults to False.
+        use_cipher (bool, optional): decrypt file. Defaults to False.
 
     Examples:
         ```
@@ -180,7 +179,7 @@ def save_model(model: torch.nn.Module, file: FILE_PATH, use_cipher: Optional[boo
     if use_sfcs_sdk:
         saver = SfcsClientSaver(use_cipher=use_cipher)
     else:
-        saver = PosixSaver()
+        saver = PosixSaver(use_cipher=use_cipher)
 
     return saver.save_model(model, file)
 
@@ -191,7 +190,7 @@ def save_pt(state_dict: Dict[str, torch.Tensor], file: FILE_PATH, use_cipher: Op
     Args:
         state_dict (Dict): state dict
         file (FILE_PATH): file path
-        use_cipher (bool, optional): encrypt file when use sfcs sdk. Defaults to False.
+        use_cipher (bool, optional): encrypt file. Defaults to False.
 
     Examples:
         ```
@@ -206,6 +205,6 @@ def save_pt(state_dict: Dict[str, torch.Tensor], file: FILE_PATH, use_cipher: Op
     if use_sfcs_sdk:
         saver = SfcsClientSaver(use_cipher=use_cipher)
     else:
-        saver = PosixSaver()
+        saver = PosixSaver(use_cipher=use_cipher)
 
     return saver.save_pt(state_dict, file)

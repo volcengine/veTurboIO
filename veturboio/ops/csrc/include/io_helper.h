@@ -30,7 +30,7 @@ class IOHelper
     void load_file_to_tensor(std::string file_path, torch::Tensor res_tensor, torch::Tensor sample_tensor,
                              int64_t offset, int64_t device_id, int64_t num_thread, bool use_pinmem, bool use_sfcs_sdk,
                              bool use_direct_io, bool use_cipher, pybind11::array_t<char> key_arr,
-                             pybind11::array_t<char> iv_arr);
+                             pybind11::array_t<char> iv_arr, int64_t header_size);
     void init_buffer(string file_path, int64_t file_size, bool use_pinmem, bool use_sfcs_sdk);
     void free_buffer();
 };

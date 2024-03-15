@@ -13,8 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "include/fastcrypto.h"
 #include "include/io_helper.h"
+#include "include/cipher.h"
+#include "include/fastcrypto.h"
 
 IOHelper::~IOHelper()
 {
@@ -119,13 +120,13 @@ void read_unaligned_part(std::string file_path, torch::Tensor res_tensor, int64_
 void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tensor, torch::Tensor sample_tensor,
                                    int64_t offset, int64_t device_id, int64_t num_thread, bool use_pinmem,
                                    bool use_sfcs_sdk, bool use_direct_io, bool use_cipher,
-                                   pybind11::array_t<char> key_arr, pybind11::array_t<char> iv_arr)
+                                   pybind11::array_t<char> key_arr, pybind11::array_t<char> iv_arr, int64_t header_size)
 {
     size_t file_size = get_file_size(file_path.c_str(), use_sfcs_sdk);
     size_t total_size = file_size - offset;
     size_t read_unaligned_size = 0;
     // set cipher
-    CipherInfo cipher_info(use_cipher, key_arr, iv_arr);
+    CipherInfo cipher_info(use_cipher, key_arr, iv_arr, header_size);
     if (device_id < 0)
     {
         read_unaligned_part(file_path, res_tensor, &offset, device_id, &total_size, use_sfcs_sdk, use_direct_io,
@@ -155,23 +156,24 @@ void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tens
         read_file(file_path, pin_mem, (char *)res_tensor.data_ptr() + read_unaligned_size, num_thread, total_size,
                   offset, use_sfcs_sdk, use_direct_io, CipherInfo());
         cudaDeviceSynchronize();
+        // decrypt with gpu
         if (cipher_info.use_cipher && total_size > 0)
         {
-            if (offset % CTR_BLOCK_SIZE != 0 || total_size % CTR_BLOCK_SIZE != 0)
+            if (offset % AES_BLOCK_SIZE != 0 || total_size % AES_BLOCK_SIZE != 0)
             {
                 throw std::runtime_error("cannot decrypt because gpu read is not aligned");
             }
-            unsigned char iv[CTR_BLOCK_SIZE];
-            for (size_t i = 0; i < CTR_BLOCK_SIZE; i++)
+            unsigned char iv[AES_BLOCK_SIZE];
+            for (size_t i = 0; i < AES_BLOCK_SIZE; i++)
             {
                 iv[i] = cipher_info.iv[i];
             }
-            ctr128_inc_by(iv, CTR_BLOCK_SIZE, offset / CTR_BLOCK_SIZE);
+            counter_inc_by(iv, AES_BLOCK_SIZE, (offset - cipher_info.header_size) / AES_BLOCK_SIZE);
             unsigned char *iv_gpu;
-            cudaMalloc((void **)&iv_gpu, CTR_BLOCK_SIZE);
-            cudaMemcpy(iv_gpu, iv, CTR_BLOCK_SIZE, cudaMemcpyHostToDevice);
+            cudaMalloc((void **)&iv_gpu, AES_BLOCK_SIZE);
+            cudaMemcpy(iv_gpu, iv, AES_BLOCK_SIZE, cudaMemcpyHostToDevice);
             unsigned char *ct = reinterpret_cast<unsigned char *>(res_tensor.data_ptr()) + read_unaligned_size;
-            int cipher_ret = ctr_decrypt_gpu(cipher_info.key, iv_gpu, ct, total_size, ct);
+            int cipher_ret = ctr_decrypt_gpu(cipher_info.mode, cipher_info.key, iv_gpu, ct, total_size, ct);
             if (!cipher_ret)
             {
                 throw std::runtime_error("Cipher Exception: gpu decrypt fail");

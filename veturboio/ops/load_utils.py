@@ -57,6 +57,7 @@ def load_file_to_tensor(
         cipher_info.use_cipher,
         cipher_info.key,
         cipher_info.iv,
+        CipherInfo.HEADER_SIZE if cipher_info.use_header else 0,
     )
 
 

@@ -14,11 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 
+import io
 import os
 from typing import Dict
 
+import numpy as np
 import torch
 
+from veturboio.ops.cipher import CipherInfo, decrypt
 from veturboio.ops.load_utils import IOHelper, load_file_to_tensor
 from veturboio.safetensors import SafetensorsFile
 from veturboio.types import FILE_PATH
@@ -46,7 +49,6 @@ class FasterPosixLoader(PosixLoader):
         file_size = os.path.getsize(safetensors_file.file)
         base_offset = safetensors_file.tensor_offset
         device = torch.device(map_location)
-
         if device.type == "cuda":
             device_id = device.index if device.index is not None else torch.cuda.current_device()
         else:
@@ -64,9 +66,18 @@ class FasterPosixLoader(PosixLoader):
             use_pinmem=self.use_pinmem,
             use_sfcs_sdk=False,
             use_direct_io=self.use_direct_io,
+            cipher_info=safetensors_file._cipher_info,
         )
 
         return SafetensorsFile.split_tensor_to_state_dict(total_tensor, safetensors_file)
 
-    def load_pt(self, file: FILE_PATH, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
+    def load_pt(
+        self, file: FILE_PATH, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
+    ) -> Dict[str, torch.Tensor]:
+        if cipher_info.use_cipher:
+            h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
+            arr = np.fromfile(file, dtype=np.uint8, offset=h_off, count=-1)
+            decrypt(cipher_info, arr, arr, 0)
+            return torch.load(io.BytesIO(arr.data), map_location=map_location)
+
         return torch.load(file, map_location=map_location)

@@ -15,6 +15,7 @@ limitations under the License.
 '''
 
 import json
+import os
 import pprint
 from typing import Callable, Dict, List
 
@@ -23,6 +24,7 @@ import torch
 from loguru import logger
 
 from veturboio.loader import BaseLoader
+from veturboio.ops.cipher import CipherInfo
 from veturboio.types import FILE_PATH
 
 # All safetensors file will start with a json string, which is the meta info of the file.
@@ -95,18 +97,34 @@ class TensorMeta:
 
 
 class SafetensorsFile:
-    def __init__(self, file: FILE_PATH, loader: BaseLoader) -> None:
+    def __init__(self, file: FILE_PATH, loader: BaseLoader, use_cipher: bool = False) -> None:
         self._file = file
         self._loader = loader
 
         self._is_valid = True
-        magic_number = loader.load_to_bytes_array(file, offset=8, count=1)[0]
+
+        # cipher related
+        self._cipher_info = CipherInfo(False)
+        if use_cipher or os.getenv("VETURBOIO_USE_CIPHER", "0") == "1":
+            header_bytes = loader.load_to_bytes_array(file, offset=0, count=CipherInfo.HEADER_SIZE).tobytes()
+            self._cipher_info = CipherInfo(True, header_bytes)
+
+        if self._cipher_info.use_header:
+            h_off = CipherInfo.HEADER_SIZE
+        else:
+            h_off = 0
+
+        magic_number = loader.load_to_bytes_array(file, offset=8 + h_off, count=1, cipher_info=self._cipher_info)[0]
         if magic_number != SAFETENSORS_FILE_MAGIC_NUM:
             self._is_valid = False
             return
 
-        self._meta_size = np.frombuffer(loader.load_to_bytes_array(file, offset=0, count=8), dtype=np.int64)[0]
-        meta_bytes = loader.load_to_bytes_array(file, offset=8, count=self._meta_size)
+        self._meta_size = np.frombuffer(
+            loader.load_to_bytes_array(file, offset=h_off, count=8, cipher_info=self._cipher_info), dtype=np.int64
+        )[0]
+        meta_bytes = loader.load_to_bytes_array(
+            file, offset=8 + h_off, count=self._meta_size, cipher_info=self._cipher_info
+        )
         meta_dict = json.loads(meta_bytes.tobytes().decode("utf-8"))
 
         self._shared_tensor = {}
@@ -129,7 +147,7 @@ class SafetensorsFile:
             )
 
         # record the offset of the tensor data
-        self._tensor_offset = np.dtype(np.int64).itemsize + self._meta_size
+        self._tensor_offset = np.dtype(np.int64).itemsize + self._meta_size + h_off
 
     @staticmethod
     def split_tensor_to_state_dict(
@@ -192,6 +210,6 @@ class SafetensorsFile:
 
     def load(self, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
         if not self._is_valid:
-            return self._loader.load_pt(self.file, map_location)
+            return self._loader.load_pt(self.file, map_location, self._cipher_info)
         else:
             return self._loader.load_safetensors(self, map_location)

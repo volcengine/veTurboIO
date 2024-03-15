@@ -22,21 +22,12 @@
 #include "common.h"
 #include "cfs.h"
 #include "logging.h"
+#include "cipher.h"
 
 #define SFCS_NAME_NODE "default"
 #define SFCS_USER_NAME "demo-user"
 
 using namespace std;
-
-class CipherInfo
-{
-  public:
-    bool use_cipher = false;
-    unsigned char *key = NULL;
-    unsigned char *iv = NULL;
-    CipherInfo(bool use_cipher, pybind11::array_t<char> key_arr, pybind11::array_t<char> iv_arr);
-    CipherInfo(){};
-};
 
 class SFCSFile
 {
@@ -47,7 +38,8 @@ class SFCSFile
     CipherInfo cipher_info;
 
     SFCSFile(std::string file_path);
-    SFCSFile(std::string file_path, bool use_cipher, pybind11::array_t<char> key_arr, pybind11::array_t<char> iv_arr);
+    SFCSFile(std::string file_path, bool use_cipher, pybind11::array_t<char> key_arr, pybind11::array_t<char> iv_arr,
+             size_t header_size);
     SFCSFile(std::string file_path, CipherInfo cipher_info);
     ~SFCSFile();
     size_t get_file_size();

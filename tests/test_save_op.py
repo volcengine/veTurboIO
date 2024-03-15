@@ -34,9 +34,19 @@ class TestSave(TestCase):
             "weight2": torch.randn(2000, 10),
         }
 
+        class MockModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+                self.linear1 = torch.nn.Linear(100, 50)
+                self.linear2 = torch.nn.Linear(100, 50)
+
+        cls.model = MockModel()
+
         cls.tempdir = tempfile.TemporaryDirectory()
         cls.filepath_0 = os.path.join(cls.tempdir.name, "model_0.safetensors")
         cls.filepath_1 = os.path.join(cls.tempdir.name, "model_0.pt")
+        cls.filepath_3 = os.path.join(cls.tempdir.name, "model_1.safetensors")
 
     @classmethod
     def tearDownClass(cls):
@@ -47,6 +57,13 @@ class TestSave(TestCase):
         with safe_open(self.filepath_0, framework="pt", device="cpu") as f:
             for key in f.keys():
                 self.assertTrue(torch.allclose(self.tensors_0[key], f.get_tensor(key)))
+
+    def test_save_model(self):
+        veturboio.save_model(self.model, self.filepath_3, use_cipher=True)
+        loaded_tensors = veturboio.load(self.filepath_3, map_location="cpu", use_cipher=True)
+        state_dict = self.model.state_dict()
+        for key in state_dict.keys():
+            self.assertTrue(torch.allclose(state_dict[key], loaded_tensors[key]))
 
     def test_save_pt(self):
         veturboio.save_pt(self.tensors_0, self.filepath_1)

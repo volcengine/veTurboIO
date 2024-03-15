@@ -17,6 +17,7 @@
 #define LOAD_UTILS_H
 
 #include "common.h"
+#include "cipher.h"
 
 void read_file(string file_path, char *addr, char *dev_mem, int num_thread, size_t total_size, size_t global_offset,
                bool use_sfcs_sdk, bool use_direct_io, CipherInfo cipher_info);

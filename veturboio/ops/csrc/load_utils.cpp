@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 #include "include/load_utils.h"
+#include "include/cipher.h"
+#include "include/fastcrypto.h"
 
 void read_file_thread_fread(int thread_id, string file_path, char *addr, char *dev_mem, size_t block_size,
-                            size_t total_size, size_t global_offset, bool use_direct_io)
+                            size_t total_size, size_t global_offset, bool use_direct_io, CipherInfo cipher_info)
 {
     size_t offset = thread_id * block_size;
     size_t read_size = block_size;
@@ -38,6 +40,19 @@ void read_file_thread_fread(int thread_id, string file_path, char *addr, char *d
     fseek(fp, global_offset + offset, SEEK_SET);
     fread(addr + offset, 1, read_size, fp);
     fclose(fp);
+
+    // Decrypt if use_cipher is true
+    if (cipher_info.use_cipher)
+    {
+        CtrDecrypter dec(cipher_info.mode, cipher_info.key, cipher_info.iv,
+                         global_offset + offset - cipher_info.header_size);
+        unsigned char *ct = reinterpret_cast<unsigned char *>(addr + offset);
+        int cipher_ret = dec.decrypt_update(ct, read_size, ct);
+        if (!cipher_ret)
+        {
+            throw std::runtime_error("Cipher Exception: decrypt fail");
+        }
+    }
 
     if (dev_mem != NULL)
         cudaMemcpyAsync(dev_mem + offset, addr + offset, read_size, cudaMemcpyHostToDevice);
@@ -69,7 +84,7 @@ void read_file(string file_path, char *addr, char *dev_mem, int num_thread, size
         for (int thread_id = 0; thread_id < num_thread; thread_id++)
         {
             threads[thread_id] = std::thread(read_file_thread_fread, thread_id, file_path, addr, dev_mem, block_size,
-                                             total_size, global_offset, use_direct_io);
+                                             total_size, global_offset, use_direct_io, cipher_info);
         }
 
         for (int thread_id = 0; thread_id < num_thread; thread_id++)

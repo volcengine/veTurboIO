@@ -15,6 +15,7 @@
  */
 #include "include/io_helper.h"
 #include "include/sfcs.h"
+#include "include/cipher.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
@@ -22,9 +23,17 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
     py::class_<SFCSFile>(m, "SFCSFile")
         .def(py::init<std::string>())
-        .def(py::init<std::string, bool, pybind11::array_t<char>, pybind11::array_t<char>>())
+        .def(py::init<std::string, bool, pybind11::array_t<char>, pybind11::array_t<char>, size_t>())
         .def("get_file_size", &SFCSFile::get_file_size)
         .def("read_file_to_array", &SFCSFile::read_file_to_array)
         .def("write_file_from_array", &SFCSFile::write_file_from_array)
         .def("delete_file", &SFCSFile::delete_file);
+
+    py::class_<CtrEncWrap>(m, "CtrEncWrap")
+        .def(py::init<std::string, pybind11::array_t<unsigned char>, pybind11::array_t<unsigned char>, size_t>())
+        .def("encrypt_update", &CtrEncWrap::encrypt_update);
+
+    py::class_<CtrDecWrap>(m, "CtrDecWrap")
+        .def(py::init<std::string, pybind11::array_t<unsigned char>, pybind11::array_t<unsigned char>, size_t>())
+        .def("decrypt_update", &CtrDecWrap::decrypt_update);
 }

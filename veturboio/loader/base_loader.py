@@ -14,11 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 
+import io
 from typing import Any, Dict
 
 import numpy as np
 import torch
 from numpy import ndarray
+
+from veturboio.ops.cipher import CipherInfo, decrypt
 
 # from veturboio.safetensors import SafetensorsFile
 from veturboio.types import FILE_PATH
@@ -31,7 +34,9 @@ class BaseLoader:
     def __init__(self, method: str) -> None:
         self.method = method
 
-    def load_to_bytes_array(self, file: FILE_PATH, offset: int, count: int) -> ndarray:
+    def load_to_bytes_array(
+        self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
+    ) -> ndarray:
         raise NotImplementedError
 
     def load_safetensors(self, safetensors_file: Any, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
@@ -63,8 +68,14 @@ class PosixLoader(BaseLoader):
     def __init__(self) -> None:
         super().__init__(method="posix")
 
-    def load_to_bytes_array(self, file: FILE_PATH, offset: int, count: int) -> ndarray:
-        return np.fromfile(file, dtype=np.byte, offset=offset, count=count)
+    def load_to_bytes_array(
+        self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
+    ) -> ndarray:
+        arr = np.fromfile(file, dtype=np.uint8, offset=offset, count=count)
+        if cipher_info.use_cipher:
+            h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
+            decrypt(cipher_info, arr, arr, offset - h_off)
+        return arr
 
     def load_safetensors(self, safetensors_file: Any, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
         state_dict = {}
@@ -72,14 +83,20 @@ class PosixLoader(BaseLoader):
         base_offset = safetensors_file.tensor_offset
         device = torch.device(map_location)
 
+        cipher_info = safetensors_file._cipher_info
+        mp_mode = "c" if cipher_info.use_cipher else "r"
+
         for tensor_meta in safetensors_file.meta.values():
             tensor_bytes = np.memmap(
                 safetensors_file.file,
-                dtype=np.byte,
-                mode="r",
+                dtype=np.uint8,
+                mode=mp_mode,
                 offset=base_offset + tensor_meta.data_offsets[0],
                 shape=tensor_meta.data_offsets[1] - tensor_meta.data_offsets[0],
             )
+            if cipher_info.use_cipher:
+                h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
+                decrypt(cipher_info, tensor_bytes, tensor_bytes, base_offset + tensor_meta.data_offsets[0] - h_off)
             tensor = torch.frombuffer(tensor_bytes, dtype=tensor_meta.dtype)
             tensor = tensor.view(tensor_meta.shape)
             if device.type == "cuda":
@@ -89,5 +106,13 @@ class PosixLoader(BaseLoader):
 
         return state_dict
 
-    def load_pt(self, file: FILE_PATH, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
+    def load_pt(
+        self, file: FILE_PATH, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
+    ) -> Dict[str, torch.Tensor]:
+        if cipher_info.use_cipher:
+            h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
+            arr = np.fromfile(file, dtype=np.uint8, offset=h_off, count=-1)
+            decrypt(cipher_info, arr, arr, 0)
+            return torch.load(io.BytesIO(arr.data), map_location=map_location)
+
         return torch.load(file, map_location=map_location)

@@ -71,18 +71,39 @@ for k, v in tensors2.items():
     assert torch.allclose(v.cuda(), reloaded_tensor2[k])
 ```
 
-### 使用SFCS读写模型并启用加解密
-该库可以读写 SFCS 上的模型文件，在此情况下可以启用加解密能力。读写 SFCS 上的模型文件和加解密所需的敏感信息，有两种获取方式：(1) 火山引擎可信服务的 unix domain socket，(2) 环境变量。在没有挂载可信服务 uds 的情况下，可以使用下面的环境变量：
+### 读写模型时启用加解密
+该库底层通过两种接口读写：SFCS SDK 和 POSIX。如果文件路径前缀为 `sfcs://` 就视为使用 SFCS SDK，所需的鉴权信息可以从火山引擎可信服务的 unix domain socket 获取， 或者设置以下三个环境变量：
 
 | 环境变量名                     | 含义                              |
 | ------------------------------ | --------------------------------- |
-| SFCS_ACCESS_KEY                | SFCS文件系统的AK                  |
-| SFCS_SECRET_KEY                | SFCS文件系统的SK                  |
-| SFCS_NAMENODE_ENDPOINT_ADDRESS | SFCS文件系统name节点地址          |
-| VETUROIO_KEY                   | 加解密的128位数据密钥的base64编码 |
-| VETUROIO_IV                    | 加解密的128位初始向量的base64编码 |
+| SFCS_ACCESS_KEY                | SFCS 文件系统的 AK                  |
+| SFCS_SECRET_KEY                | SFCS 文件系统的 SK                  |
+| SFCS_NAMENODE_ENDPOINT_ADDRESS | SFCS 文件系统 name 节点地址          |
 
-挂载可信服务 uds 或者配置好环境变量后，可以参考下面代码在读写 SFCS 上的模型文件时启用加解密：
+加解密读写模型文件所需的 data key 和 iv，共有3种获取方式，优先级按照序号：
+- [1] 加密的 data key 和 iv 存放在密文模型文件的 header 中，使用火山引擎 KMS 解密得到明文的 data key。
+- [1.1] 访问 KMS 所需的 AK/SK/ST 从火山引擎可信服务的 unix domain socket 获取，需要额外挂载。
+- [1.2] 访问 KMS 所需的 AK/SK/ST 从环境变量获取。
+- [2] 访问火山引擎可信服务的 unix domain socket 直接获取 data key 和 iv，需要额外挂载。
+- [3] 环境变量直接设置 data key 和 iv。
+
+不同方式需要设置的环境变量如下：
+
+| 环境变量名                     | 含义                                 |  
+| ------------------------------ | --------------------------------- |
+| VETURBOIO_KMS_HOST             |  [1] KMS 服务地址，默认值 open.volcengineapi.com|
+| VETURBOIO_KMS_REGION            | [1] KMS 服务所在区域，默认值 cn-beijing |
+| VETURBOIO_KMS_KEYRING_NAME      | [1] KMS 服务解密 data key 的钥匙环名 |
+| VETURBOIO_KMS_KEY_NAME          | [1] KMS 服务解密 data key 的主密钥名 |
+| DATAPIPE_SOCKET_PATH            | [1.1][2] 可信服务 uds 的路径        |
+| VETURBOIO_KMS_ACCESS_KEY        | [1.2] KMS 鉴权的 AK |
+| VETURBOIO_KMS_SECRET_KEY        | [1.2] KMS 鉴权的 SK |
+| VETURBOIO_KMS_SESSION_TOKEN     | [1.2] KMS 鉴权的临时令牌，非必需|
+| VETURBOIO_KEY                   | [3] 加解密的 128 位数据密钥的 base64 编码 |
+| VETURBOIO_IV                    | [3] 加解密的 128 位初始向量的 base64 编码 |
+
+
+按照上述三种方式设置好后，可以参考下面代码在读写模型文件时启用加解密：
 ```python
 import torch
 import veturboio

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include "include/sfcs.h"
+#include "include/cipher.h"
 #include "include/fastcrypto.h"
 
 SFCSFile::SFCSFile(std::string path)
@@ -47,10 +48,10 @@ SFCSFile::SFCSFile(std::string file_path, CipherInfo cipher_info) : SFCSFile(fil
 }
 
 SFCSFile::SFCSFile(std::string file_path, bool use_cipher, pybind11::array_t<char> key_arr,
-                   pybind11::array_t<char> iv_arr)
+                   pybind11::array_t<char> iv_arr, size_t header_size)
     : SFCSFile(file_path)
 {
-    this->cipher_info = CipherInfo(use_cipher, key_arr, iv_arr);
+    this->cipher_info = CipherInfo(use_cipher, key_arr, iv_arr, header_size);
 }
 
 SFCSFile::~SFCSFile()
@@ -118,7 +119,7 @@ size_t SFCSFile::read_file(char *addr, size_t length, size_t offset)
     // Decrypt if use_cipher is true
     if (cipher_info.use_cipher)
     {
-        CtrDecrypter dec(cipher_info.key, cipher_info.iv, offset);
+        CtrDecrypter dec(cipher_info.mode, cipher_info.key, cipher_info.iv, offset - cipher_info.header_size);
         unsigned char *ct = reinterpret_cast<unsigned char *>(addr);
         int cipher_ret = dec.decrypt_update(ct, length - count, ct);
         if (!cipher_ret)
@@ -141,6 +142,7 @@ void SFCSFile::read_file_thread(int thread_id, char *addr, char *dev_mem, size_t
         read_size = (total_size > offset) ? total_size - offset : 0;
     }
 
+    // TODO: actual number of bytes read may be less than read_size
     read_file(addr + offset, read_size, global_offset + offset);
 
     if (dev_mem != NULL)
@@ -191,9 +193,10 @@ size_t SFCSFile::write_file(char *addr, size_t length)
 
     if (cipher_info.use_cipher)
     {
-        CtrEncrypter enc(cipher_info.key, cipher_info.iv, 0);
+        size_t h_off = cipher_info.header_size;
+        CtrEncrypter enc(cipher_info.mode, cipher_info.key, cipher_info.iv, 0);
         unsigned char *pt = reinterpret_cast<unsigned char *>(addr);
-        int cipher_ret = enc.encrypt_update(pt, length, pt);
+        int cipher_ret = enc.encrypt_update(pt + h_off, length - h_off, pt + h_off);
         if (!cipher_ret)
         {
             throw std::runtime_error("Cipher Exception: encrypt fail");
@@ -239,31 +242,10 @@ size_t SFCSFile::write_file_from_array(pybind11::array_t<char> arr, size_t lengt
 void SFCSFile::delete_file()
 {
     int ret;
-
     ret = cfsDelete(fs, file_path.c_str(), 1);
     if (ret == -1)
     {
         logError("Failed to delete file", file_path, cfsGetLastError());
         throw std::runtime_error("SFCS Exception: delete file");
-    }
-}
-
-CipherInfo::CipherInfo(bool use_cipher, pybind11::array_t<char> key_arr, pybind11::array_t<char> iv_arr)
-{
-    this->use_cipher = use_cipher;
-    if (use_cipher)
-    {
-        pybind11::buffer_info key_info = key_arr.request();
-        if ((size_t)key_info.size != CTR_BLOCK_SIZE)
-        {
-            throw std::runtime_error("Cipher Exception: key length invalid");
-        }
-        key = reinterpret_cast<unsigned char *>(key_info.ptr);
-        pybind11::buffer_info iv_info = iv_arr.request();
-        if ((size_t)iv_info.size != CTR_BLOCK_SIZE)
-        {
-            throw std::runtime_error("Cipher Exception: iv length invalid");
-        }
-        iv = reinterpret_cast<unsigned char *>(iv_info.ptr);
     }
 }
