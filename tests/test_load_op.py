@@ -184,3 +184,11 @@ class TestLoad(TestCase):
             self.cuda_tensors_0, self.pt_filepath_enc_h, "cuda:0", use_cipher=True, enable_fast_mode=False
         )
         del os.environ["VETURBOIO_CIPHER_HEADER"]
+
+    def test_load_directIO_fall_back(self):
+        with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpFile:
+            veturboio.save_file(self.tensors_0, tmpFile.file.name)
+            tmpFile.flush()
+            loaded_tensors = veturboio.load(tmpFile.name, map_location="cpu", use_direct_io=True)
+            for key in self.tensors_0.keys():
+                self.assertTrue(torch.allclose(self.tensors_0[key], loaded_tensors[key]))

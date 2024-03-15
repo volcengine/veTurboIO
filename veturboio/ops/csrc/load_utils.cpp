@@ -14,15 +14,20 @@
  * limitations under the License.
  */
 #include "include/load_utils.h"
+#include "include/logging.h"
 #include "include/cipher.h"
 #include "include/fastcrypto.h"
+#include <errno.h>
 
 void read_file_thread_fread(int thread_id, string file_path, char *addr, char *dev_mem, size_t block_size,
                             size_t total_size, size_t global_offset, bool use_direct_io, CipherInfo cipher_info)
 {
     size_t offset = thread_id * block_size;
     size_t read_size = block_size;
-    int fd;
+    int fd = -1;
+    int ret = 0;
+    size_t size_read = 0;
+
     if (offset + read_size >= total_size)
     {
         read_size = (total_size > offset) ? total_size - offset : 0;
@@ -30,16 +35,48 @@ void read_file_thread_fread(int thread_id, string file_path, char *addr, char *d
     // TODO: use_direct_io if sfcs file detected
     if (use_direct_io)
     {
-        fd = open(file_path.c_str(), O_RDONLY | O_DIRECT);
+        if ((fd = open(file_path.c_str(), O_RDONLY | O_DIRECT)) < 0)
+        {
+            if (errno == EINVAL)
+            {
+                logWarn("open file using directIO failed, fall back to bufferIO", file_path.c_str(),
+                        std::strerror(EINVAL));
+            }
+            else
+            {
+                logError("open file using directIO failed", file_path.c_str(), std::strerror(errno));
+                throw std::runtime_error("veTurboIO Exception: can't apply open operation");
+            }
+        }
     }
-    else
+    if (fd == -1)
     {
-        fd = open(file_path.c_str(), O_RDONLY);
+        if ((fd = open(file_path.c_str(), O_RDONLY)) < 0)
+        {
+            logError("open file using bufferIO failed", file_path.c_str(), std::strerror(errno));
+            throw std::runtime_error("veTurboIO Exception: can't apply open operation");
+        }
     }
     FILE *fp = fdopen(fd, "rb");
-    fseek(fp, global_offset + offset, SEEK_SET);
-    fread(addr + offset, 1, read_size, fp);
-    fclose(fp);
+    if (fp == NULL)
+    {
+        logError("can't apply fdopen to file", file_path.c_str(), std::strerror(errno));
+        throw std::runtime_error("veTurboIO Exception: can't apply fdopen operation");
+    }
+    if ((ret = fseek(fp, global_offset + offset, SEEK_SET)) < 0)
+    {
+        logError("can't apply fseek to file", file_path.c_str(), std::strerror(errno));
+        throw std::runtime_error("veTurboIO Exception: can't apply fseek operation");
+    }
+    if ((size_read = fread(addr + offset, 1, read_size, fp)) == 0)
+    {
+        logWarn("read file with 0 bytes returned", file_path.c_str(), offset, read_size);
+    }
+    if ((ret = fclose(fp)) < 0)
+    {
+        logError("can't apply fclose to file", file_path.c_str(), std::strerror(errno));
+        throw std::runtime_error("veTurboIO Exception: can't apply fclose operation");
+    }
 
     // Decrypt if use_cipher is true
     if (cipher_info.use_cipher)
