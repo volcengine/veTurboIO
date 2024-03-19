@@ -47,17 +47,19 @@ class SfcsClientLoader(BaseLoader):
 
         init_sfcs_conf()
 
-    def load_to_bytes_array(
+    def load_to_bytes(
         self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
-    ) -> ndarray:
+    ) -> bytes:
         file_size = sfcs_get_file_size(file)
         if offset + count > file_size:
             count = file_size - offset
-        candidate = np.empty([count], dtype=np.byte)
+
+        file_bytes = bytes(count)
+        candidate = np.frombuffer(file_bytes, dtype=np.byte)
         sfcs_read_file(
             file, candidate, length=count, offset=offset, num_thread=self.num_thread, cipher_info=cipher_info
         )
-        return candidate
+        return file_bytes
 
     def load_safetensors(
         self, safetensors_file: SafetensorsFile, map_location: str = "cpu"
@@ -91,5 +93,5 @@ class SfcsClientLoader(BaseLoader):
     ) -> Dict[str, torch.Tensor]:
         file_size = sfcs_get_file_size(file)
         h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
-        file_bytes = self.load_to_bytes_array(file, offset=h_off, count=file_size - h_off, cipher_info=cipher_info)
-        return torch.load(BytesIO(file_bytes.data), map_location=map_location)
+        file_bytes = self.load_to_bytes(file, offset=h_off, count=file_size - h_off, cipher_info=cipher_info)
+        return torch.load(BytesIO(file_bytes), map_location=map_location)

@@ -34,9 +34,9 @@ class BaseLoader:
     def __init__(self, method: str) -> None:
         self.method = method
 
-    def load_to_bytes_array(
+    def load_to_bytes(
         self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
-    ) -> ndarray:
+    ) -> bytes:
         raise NotImplementedError
 
     def load_safetensors(self, safetensors_file: Any, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
@@ -68,14 +68,14 @@ class PosixLoader(BaseLoader):
     def __init__(self) -> None:
         super().__init__(method="posix")
 
-    def load_to_bytes_array(
+    def load_to_bytes(
         self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
-    ) -> ndarray:
+    ) -> bytes:
         arr = np.fromfile(file, dtype=np.uint8, offset=offset, count=count)
         if cipher_info.use_cipher:
             h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
             decrypt(cipher_info, arr, arr, offset - h_off)
-        return arr
+        return arr.tobytes()
 
     def load_safetensors(self, safetensors_file: Any, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
         state_dict = {}
