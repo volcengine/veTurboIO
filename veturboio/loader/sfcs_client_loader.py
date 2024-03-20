@@ -33,6 +33,7 @@ from veturboio.types import FILE_PATH
 class SfcsClientLoader(BaseLoader):
     def __init__(
         self,
+        file: FILE_PATH,
         helper: IOHelper,
         num_thread: int = 32,
         use_pinmem: bool = False,
@@ -40,24 +41,23 @@ class SfcsClientLoader(BaseLoader):
     ) -> None:
         super().__init__(method="client")
 
+        self.file = file
         self.helper = helper
         self.num_thread = num_thread
         self.use_pinmem = use_pinmem
         self.use_direct_io = use_direct_io
 
-        init_sfcs_conf()
+        init_sfcs_conf(file)
 
-    def load_to_bytes(
-        self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
-    ) -> bytes:
-        file_size = sfcs_get_file_size(file)
+    def load_to_bytes(self, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)) -> bytes:
+        file_size = sfcs_get_file_size(self.file)
         if offset + count > file_size:
             count = file_size - offset
 
         file_bytes = bytes(count)
         candidate = np.frombuffer(file_bytes, dtype=np.byte)
         sfcs_read_file(
-            file, candidate, length=count, offset=offset, num_thread=self.num_thread, cipher_info=cipher_info
+            self.file, candidate, length=count, offset=offset, num_thread=self.num_thread, cipher_info=cipher_info
         )
         return file_bytes
 
@@ -89,9 +89,9 @@ class SfcsClientLoader(BaseLoader):
         return SafetensorsFile.split_tensor_to_state_dict(total_tensor, safetensors_file)
 
     def load_pt(
-        self, file: FILE_PATH, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
+        self, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
     ) -> Dict[str, torch.Tensor]:
-        file_size = sfcs_get_file_size(file)
+        file_size = sfcs_get_file_size(self.file)
         h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
-        file_bytes = self.load_to_bytes(file, offset=h_off, count=file_size - h_off, cipher_info=cipher_info)
+        file_bytes = self.load_to_bytes(offset=h_off, count=file_size - h_off, cipher_info=cipher_info)
         return torch.load(BytesIO(file_bytes), map_location=map_location)

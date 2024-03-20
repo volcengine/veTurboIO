@@ -39,8 +39,9 @@ class BaseSaver:
 
 
 class PosixSaver(BaseSaver):
-    def __init__(self, use_cipher: bool = False) -> None:
+    def __init__(self, file: FILE_PATH, use_cipher: bool = False) -> None:
         super().__init__(method="posix")
+        self.file = file
         use_cipher = use_cipher or os.getenv("VETURBOIO_USE_CIPHER", "0") == "1"
         use_header = use_cipher and os.getenv("VETURBOIO_CIPHER_HEADER", "0") == "1"
         if use_header:
@@ -48,7 +49,7 @@ class PosixSaver(BaseSaver):
         else:
             self.cipher_info = CipherInfo(use_cipher)
 
-    def save_file(self, state_dict: Dict[str, torch.Tensor], file: FILE_PATH, metadata: Dict[str, str] = None) -> None:
+    def save_file(self, state_dict: Dict[str, torch.Tensor], metadata: Dict[str, str] = None) -> None:
         if self.cipher_info.use_cipher:
             with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpfile:
                 tmp_file_path = tmpfile.name
@@ -56,15 +57,15 @@ class PosixSaver(BaseSaver):
                 tmp_file_size = os.path.getsize(tmp_file_path)
                 tmp_file_bytes = np.memmap(tmp_file_path, dtype=np.uint8, mode='r', shape=tmp_file_size)
                 h_off = CipherInfo.HEADER_SIZE if self.cipher_info.use_header else 0
-                file_bytes = np.memmap(file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
+                file_bytes = np.memmap(self.file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
                 encrypt(self.cipher_info, tmp_file_bytes, file_bytes[h_off:], 0)
                 if h_off:
                     file_bytes[:h_off] = np.frombuffer(self.cipher_info.to_header_bytes(), dtype=np.uint8)
                 file_bytes.flush()
         else:
-            safetenors_save_file(state_dict, file, metadata=metadata)
+            safetenors_save_file(state_dict, self.file, metadata=metadata)
 
-    def save_model(self, model: torch.nn.Module, file: FILE_PATH) -> None:
+    def save_model(self, model: torch.nn.Module) -> None:
         if self.cipher_info.use_cipher:
             with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpfile:
                 tmp_file_path = tmpfile.name
@@ -72,15 +73,15 @@ class PosixSaver(BaseSaver):
                 tmp_file_size = os.path.getsize(tmp_file_path)
                 tmp_file_bytes = np.memmap(tmp_file_path, dtype=np.uint8, mode='r', shape=tmp_file_size)
                 h_off = CipherInfo.HEADER_SIZE if self.cipher_info.use_header else 0
-                file_bytes = np.memmap(file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
+                file_bytes = np.memmap(self.file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
                 encrypt(self.cipher_info, tmp_file_bytes, file_bytes[h_off:], 0)
                 if h_off:
                     file_bytes[:h_off] = np.frombuffer(self.cipher_info.to_header_bytes(), dtype=np.uint8)
                 file_bytes.flush()
         else:
-            safetensors_save_model(model, file)
+            safetensors_save_model(model, self.file)
 
-    def save_pt(self, state_dict: Dict[str, torch.Tensor], file: FILE_PATH) -> None:
+    def save_pt(self, state_dict: Dict[str, torch.Tensor]) -> None:
         if self.cipher_info.use_cipher:
             with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpfile:
                 tmp_file_path = tmpfile.name
@@ -88,10 +89,10 @@ class PosixSaver(BaseSaver):
                 tmp_file_size = os.path.getsize(tmp_file_path)
                 tmp_file_bytes = np.memmap(tmp_file_path, dtype=np.uint8, mode='r', shape=tmp_file_size)
                 h_off = CipherInfo.HEADER_SIZE if self.cipher_info.use_header else 0
-                file_bytes = np.memmap(file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
+                file_bytes = np.memmap(self.file, dtype=np.uint8, mode='w+', shape=tmp_file_size + h_off)
                 encrypt(self.cipher_info, tmp_file_bytes, file_bytes[h_off:], 0)
                 if h_off:
                     file_bytes[:h_off] = np.frombuffer(self.cipher_info.to_header_bytes(), dtype=np.uint8)
                 file_bytes.flush()
         else:
-            torch.save(state_dict, file)
+            torch.save(state_dict, self.file)

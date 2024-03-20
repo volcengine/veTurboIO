@@ -30,9 +30,9 @@ import numpy as np
 from veturboio.ops.cipher import CipherInfo, DataPipeClient
 from veturboio.ops.sfcs_utils import (
     SFCS_OPT_ENV_LIST,
-    SFCS_PROPERTIES,
     SFCS_REQ_ENV_LIST,
     credentials_helper,
+    generate_sfcs_conf_xml,
     init_sfcs_conf,
 )
 
@@ -233,60 +233,86 @@ class TestCredentials(TestCase):
 
     def test_sfcs_conf(self):
         # case 1: a xml file already exists, do nothing
-        with tempfile.NamedTemporaryFile() as sfcs_conf:
-            os.environ['LIBCFS_CONF'] = sfcs_conf.name
-            init_sfcs_conf()
-            self.assertFalse(credentials_helper.running)
+        sfcs_conf = os.path.join(os.getcwd(), 'base_model.xml')
+        generate_sfcs_conf_xml(sfcs_conf, {'test': 'test'})
+        init_sfcs_conf('/base_model/tensor.pt')
+        self.assertEqual(os.environ['LIBCFS_CONF'], sfcs_conf)
+        self.assertEqual(len(credentials_helper.threads), 0)
+        self.assertEqual(len(credentials_helper.running), 0)
+        os.remove(sfcs_conf)
 
         for e in SFCS_REQ_ENV_LIST:
             os.environ[e] = 'test-value'
 
         # case 2: env SFCS_ACCESS_KEY and SFCS_SECRET_KEY and SFCS_NAMENODE_ENDPOINT_ADDRESS exists
-        with tempfile.TemporaryDirectory() as conf_dir:
-            conf_path = os.path.join(conf_dir, 'libcfs.xml')
-            os.environ['LIBCFS_CONF'] = conf_path
-            os.environ['SFCS_ACCESS_KEY'] = 'AKTPODg0MzV**2ZDcxMDg'
-            os.environ['SFCS_SECRET_KEY'] = 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ=='
-            os.environ['SFCS_NAMENODE_ENDPOINT_ADDRESS'] = '100.67.19.231'
-            init_sfcs_conf()
-            self.assertEqual(SFCS_PROPERTIES['cfs.access.key'], 'AKTPODg0MzV**2ZDcxMDg')
-            self.assertEqual(SFCS_PROPERTIES['cfs.secret.key'], 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ==')
-            self.assertEqual(SFCS_PROPERTIES['cfs.namenode.endpoint.address.test-value'], '100.67.19.231')
-            self.assertFalse(credentials_helper.running)
-            self.assertTrue(os.path.exists(conf_path))
+        os.environ['SFCS_ACCESS_KEY'] = 'AKTPODg0MzV**2ZDcxMDg'
+        os.environ['SFCS_SECRET_KEY'] = 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ=='
+        os.environ['SFCS_NAMENODE_ENDPOINT_ADDRESS'] = '100.67.19.231'
+        sfcs_conf = os.path.join(os.getcwd(), 'base_model2.xml')
+        init_sfcs_conf('/base_model2/tensor.pt')
+        self.assertEqual(os.environ['LIBCFS_CONF'], sfcs_conf)
+        self.assertEqual(len(credentials_helper.threads), 0)
+        self.assertEqual(len(credentials_helper.running), 0)
+        self.assertTrue(os.path.exists(sfcs_conf))
+        os.remove(sfcs_conf)
 
         # case 3: use datapipe socket to get and refresh ak, sk, st and namenode_ip
         DataPipeClient.DATAPIPE_SOCKET_PATH = self.server_address
-        with tempfile.TemporaryDirectory() as conf_dir:
-            conf_path = os.path.join(conf_dir, 'libcfs.xml')
-            os.environ['LIBCFS_CONF'] = conf_path
-            os.environ.pop('SFCS_ACCESS_KEY', None)
-            os.environ.pop('SFCS_SECRET_KEY', None)
-            os.environ.pop('SFCS_NAMENODE_ENDPOINT_ADDRESS', None)
-            SFCS_PROPERTIES.pop('cfs.access.key')
-            SFCS_PROPERTIES.pop('cfs.secret.key')
-            SFCS_PROPERTIES.pop('cfs.namenode.endpoint.address.test-value')
-            init_sfcs_conf()
-            self.assertEqual(SFCS_PROPERTIES['cfs.access.key'], 'AKTPODg0MzV**2ZDcxMDg')
-            self.assertEqual(SFCS_PROPERTIES['cfs.secret.key'], 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ==')
-            self.assertEqual(SFCS_PROPERTIES['cfs.namenode.endpoint.address.test-value'], '100.67.19.231')
-            self.assertEqual(SFCS_PROPERTIES['cfs.security.token'], 'STSeyJBY2NvdW50SW**kXXXXXXX')
-            self.assertTrue(credentials_helper.running)
-            self.assertTrue(os.path.exists(conf_path))
-            t1 = credentials_helper.current_time
-            sleep(3)
-            t2 = credentials_helper.current_time
-            self.assertTrue(t1 < t2)
-            credentials_helper.stop()
+        os.environ.pop('SFCS_ACCESS_KEY', None)
+        os.environ.pop('SFCS_SECRET_KEY', None)
+        os.environ.pop('SFCS_NAMENODE_ENDPOINT_ADDRESS', None)
+        sfcs_conf3 = os.path.join(os.getcwd(), 'base_model3.xml')
+        sfcs_conf4 = os.path.join(os.getcwd(), 'base_model4.xml')
+        init_sfcs_conf('/base_model3/tensor.pt')
+        init_sfcs_conf('/base_model4/tensor.pt')
+        self.assertTrue('base_model3' in credentials_helper.threads)
+        self.assertTrue('base_model4' in credentials_helper.threads)
+        self.assertTrue(credentials_helper.running['base_model3'])
+        self.assertTrue(credentials_helper.running['base_model4'])
+        self.assertTrue(os.path.exists(sfcs_conf3))
+        self.assertTrue(os.path.exists(sfcs_conf4))
+        os.remove(sfcs_conf3)
+        os.remove(sfcs_conf4)
+        sleep(3)
+        self.assertTrue(os.path.exists(sfcs_conf3))
+        self.assertTrue(os.path.exists(sfcs_conf4))
+        print(credentials_helper.threads)
+
+    def test_sfcs_conf_json(self):
+        for e in SFCS_REQ_ENV_LIST:
+            os.environ[e] = 'test-value'
+        os.environ['SFCS_FSNAME'] = json.dumps({'base_model1': 'test-value1', 'base_model2': 'test-value2'})
+        os.environ['SFCS_NS_ID'] = json.dumps({'base_model1': 'test-value1', 'base_model2': 'test-value2'})
+        os.environ['SFCS_UFS_PATH'] = json.dumps({'base_model1': 'test-value1', 'base_model2': 'test-value2'})
+        DataPipeClient.DATAPIPE_SOCKET_PATH = self.server_address
+        os.environ.pop('SFCS_ACCESS_KEY', None)
+        os.environ.pop('SFCS_SECRET_KEY', None)
+        os.environ.pop('SFCS_NAMENODE_ENDPOINT_ADDRESS', None)
+        sfcs_conf1 = os.path.join(os.getcwd(), 'base_model1.xml')
+        sfcs_conf2 = os.path.join(os.getcwd(), 'base_model2.xml')
+        init_sfcs_conf('/base_model1/tensor.pt')
+        init_sfcs_conf('/base_model2/tensor.pt')
+        self.assertTrue('base_model1' in credentials_helper.threads)
+        self.assertTrue('base_model2' in credentials_helper.threads)
+        self.assertTrue(credentials_helper.running['base_model1'])
+        self.assertTrue(credentials_helper.running['base_model2'])
+        self.assertTrue(os.path.exists(sfcs_conf1))
+        self.assertTrue(os.path.exists(sfcs_conf2))
+        os.remove(sfcs_conf1)
+        os.remove(sfcs_conf2)
+        sleep(3)
+        self.assertTrue(os.path.exists(sfcs_conf1))
+        self.assertTrue(os.path.exists(sfcs_conf2))
+        print(credentials_helper.threads)
 
     @classmethod
     def tearDownClass(cls):
+        credentials_helper.stop()
         os.environ.pop('LIBCFS_CONF', None)
         for e in SFCS_REQ_ENV_LIST:
             os.environ.pop(e, None)
         for e in SFCS_OPT_ENV_LIST:
             os.environ.pop(e, None)
-        SFCS_PROPERTIES.pop('cfs.security.token', None)
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join()

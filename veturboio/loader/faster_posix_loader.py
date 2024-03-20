@@ -32,12 +32,13 @@ from .base_loader import PosixLoader
 class FasterPosixLoader(PosixLoader):
     def __init__(
         self,
+        file: FILE_PATH,
         helper: IOHelper,
         num_thread: int = 32,
         use_pinmem: bool = False,
         use_direct_io: bool = False,
     ) -> None:
-        super().__init__()
+        super().__init__(file)
         self.helper = helper
         self.num_thread = num_thread
         self.use_pinmem = use_pinmem
@@ -72,12 +73,12 @@ class FasterPosixLoader(PosixLoader):
         return SafetensorsFile.split_tensor_to_state_dict(total_tensor, safetensors_file)
 
     def load_pt(
-        self, file: FILE_PATH, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
+        self, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
     ) -> Dict[str, torch.Tensor]:
         if cipher_info.use_cipher:
             h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
-            arr = np.fromfile(file, dtype=np.uint8, offset=h_off, count=-1)
+            arr = np.fromfile(self.file, dtype=np.uint8, offset=h_off, count=-1)
             decrypt(cipher_info, arr, arr, 0)
             return torch.load(io.BytesIO(arr.data), map_location=map_location)
 
-        return torch.load(file, map_location=map_location)
+        return torch.load(self.file, map_location=map_location)

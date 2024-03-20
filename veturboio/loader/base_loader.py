@@ -34,9 +34,7 @@ class BaseLoader:
     def __init__(self, method: str) -> None:
         self.method = method
 
-    def load_to_bytes(
-        self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
-    ) -> bytes:
+    def load_to_bytes(self, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)) -> bytes:
         raise NotImplementedError
 
     def load_safetensors(self, safetensors_file: Any, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
@@ -65,13 +63,12 @@ class BaseLoader:
 
 
 class PosixLoader(BaseLoader):
-    def __init__(self) -> None:
+    def __init__(self, file: FILE_PATH) -> None:
         super().__init__(method="posix")
+        self.file = file
 
-    def load_to_bytes(
-        self, file: FILE_PATH, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)
-    ) -> bytes:
-        arr = np.fromfile(file, dtype=np.uint8, offset=offset, count=count)
+    def load_to_bytes(self, offset: int, count: int, cipher_info: CipherInfo = CipherInfo(False)) -> bytes:
+        arr = np.fromfile(self.file, dtype=np.uint8, offset=offset, count=count)
         if cipher_info.use_cipher:
             h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
             decrypt(cipher_info, arr, arr, offset - h_off)
@@ -107,12 +104,12 @@ class PosixLoader(BaseLoader):
         return state_dict
 
     def load_pt(
-        self, file: FILE_PATH, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
+        self, map_location: str = "cpu", cipher_info: CipherInfo = CipherInfo(False)
     ) -> Dict[str, torch.Tensor]:
         if cipher_info.use_cipher:
             h_off = CipherInfo.HEADER_SIZE if cipher_info.use_header else 0
-            arr = np.fromfile(file, dtype=np.uint8, offset=h_off, count=-1)
+            arr = np.fromfile(self.file, dtype=np.uint8, offset=h_off, count=-1)
             decrypt(cipher_info, arr, arr, 0)
             return torch.load(io.BytesIO(arr.data), map_location=map_location)
 
-        return torch.load(file, map_location=map_location)
+        return torch.load(self.file, map_location=map_location)

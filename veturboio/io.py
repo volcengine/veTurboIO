@@ -77,16 +77,18 @@ def load(
 
     use_sfcs_sdk, file = is_sfcs_path(file)
     if enable_fast_mode == False:
-        loader = PosixLoader()
+        loader = PosixLoader(file)
     elif use_sfcs_sdk:
         loader = SfcsClientLoader(
-            helper,
+            helper=helper,
+            file=file,
             num_thread=num_thread,
             use_pinmem=use_pinmem,
             use_direct_io=use_direct_io,
         )
     else:
         loader = FasterPosixLoader(
+            file,
             helper,
             num_thread=num_thread,
             use_pinmem=use_pinmem,
@@ -126,14 +128,14 @@ def save_file(
     """
     use_sfcs_sdk, file = is_sfcs_path(file)
     if use_sfcs_sdk:
-        saver = SfcsClientSaver(use_cipher=use_cipher)
+        saver = SfcsClientSaver(file=file, use_cipher=use_cipher)
     else:
-        saver = PosixSaver(use_cipher=use_cipher)
+        saver = PosixSaver(file=file, use_cipher=use_cipher)
 
     # TODO: there are some bugs while state_dict is loaded from veturboio
     if not force_save_shared_tensor:
         try:
-            saver.save_file(state_dict, file, metadata=metadata)
+            saver.save_file(state_dict, metadata=metadata)
         except ValueError as e:
             msg = str(e)
             raise ValueError(msg)
@@ -154,7 +156,7 @@ def save_file(
     if force_contiguous:
         state_dict = {k: v.contiguous() for k, v in state_dict.items()}
 
-    return saver.save_file(state_dict, file, metadata=metadata)
+    return saver.save_file(state_dict, metadata=metadata)
 
 
 def save_model(model: torch.nn.Module, file: FILE_PATH, use_cipher: Optional[bool] = False) -> None:
@@ -177,11 +179,11 @@ def save_model(model: torch.nn.Module, file: FILE_PATH, use_cipher: Optional[boo
 
     use_sfcs_sdk, file = is_sfcs_path(file)
     if use_sfcs_sdk:
-        saver = SfcsClientSaver(use_cipher=use_cipher)
+        saver = SfcsClientSaver(file=file, use_cipher=use_cipher)
     else:
-        saver = PosixSaver(use_cipher=use_cipher)
+        saver = PosixSaver(file=file, use_cipher=use_cipher)
 
-    return saver.save_model(model, file)
+    return saver.save_model(model)
 
 
 def save_pt(state_dict: Dict[str, torch.Tensor], file: FILE_PATH, use_cipher: Optional[bool] = False) -> None:
@@ -203,8 +205,8 @@ def save_pt(state_dict: Dict[str, torch.Tensor], file: FILE_PATH, use_cipher: Op
     """
     use_sfcs_sdk, file = is_sfcs_path(file)
     if use_sfcs_sdk:
-        saver = SfcsClientSaver(use_cipher=use_cipher)
+        saver = SfcsClientSaver(file=file, use_cipher=use_cipher)
     else:
-        saver = PosixSaver(use_cipher=use_cipher)
+        saver = PosixSaver(file=file, use_cipher=use_cipher)
 
-    return saver.save_pt(state_dict, file)
+    return saver.save_pt(state_dict)

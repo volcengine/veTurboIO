@@ -106,7 +106,7 @@ class SafetensorsFile:
         # cipher related
         self._cipher_info = CipherInfo(False)
         if use_cipher or os.getenv("VETURBOIO_USE_CIPHER", "0") == "1":
-            header_bytes = loader.load_to_bytes(file, offset=0, count=CipherInfo.HEADER_SIZE)
+            header_bytes = loader.load_to_bytes(offset=0, count=CipherInfo.HEADER_SIZE)
             self._cipher_info = CipherInfo(True, header_bytes)
 
         if self._cipher_info.use_header:
@@ -114,15 +114,15 @@ class SafetensorsFile:
         else:
             h_off = 0
 
-        magic_number = loader.load_to_bytes(file, offset=8 + h_off, count=1, cipher_info=self._cipher_info)[0]
+        magic_number = loader.load_to_bytes(offset=8 + h_off, count=1, cipher_info=self._cipher_info)[0]
         if magic_number != SAFETENSORS_FILE_MAGIC_NUM:
             self._is_valid = False
             return
 
         self._meta_size = np.frombuffer(
-            loader.load_to_bytes(file, offset=h_off, count=8, cipher_info=self._cipher_info), dtype=np.int64
+            loader.load_to_bytes(offset=h_off, count=8, cipher_info=self._cipher_info), dtype=np.int64
         )[0]
-        meta_bytes = loader.load_to_bytes(file, offset=8 + h_off, count=self._meta_size, cipher_info=self._cipher_info)
+        meta_bytes = loader.load_to_bytes(offset=8 + h_off, count=self._meta_size, cipher_info=self._cipher_info)
         meta_dict = json.loads(meta_bytes.decode("utf-8"))
 
         self._shared_tensor = {}
@@ -208,6 +208,6 @@ class SafetensorsFile:
 
     def load(self, map_location: str = "cpu") -> Dict[str, torch.Tensor]:
         if not self._is_valid:
-            return self._loader.load_pt(self.file, map_location, self._cipher_info)
+            return self._loader.load_pt(map_location, self._cipher_info)
         else:
             return self._loader.load_safetensors(self, map_location)

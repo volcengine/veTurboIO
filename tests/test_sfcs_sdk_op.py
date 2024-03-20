@@ -29,10 +29,6 @@ import veturboio.ops.sfcs_utils as sfcs_utils
 
 
 def init_sfcs_env():
-    sfcs_conf = os.getcwd() + '/libcfs.xml'
-    if os.path.exists(sfcs_conf):
-        os.remove(sfcs_conf)
-
     os.environ['SFCS_FSNAME'] = 'byted-cpu-sfcs'
     os.environ['SFCS_REGION'] = 'cn-beijing'
     os.environ['SFCS_ACCESS_KEY'] = os.environ['CI_SFCS_AK']
@@ -45,8 +41,6 @@ def init_sfcs_env():
     os.environ['SFCS_NAMENODE_ENDPOINT_ADDRESS'] = '100.67.19.231'
     os.environ['SFCS_LOG_SEVERITY'] = 'ERROR'
 
-    sfcs_utils.init_sfcs_conf()
-
 
 class TestSFCS(TestCase):
     @classmethod
@@ -56,6 +50,12 @@ class TestSFCS(TestCase):
     def _run_pipeline(self):
         filepath = "/data.bin"
         filesize = 1024 * 1024
+
+        first_path = os.path.abspath(filepath).split("/")[1]
+        sfcs_conf = os.path.join(os.getcwd(), first_path + '.xml')
+        if os.path.exists(sfcs_conf):
+            os.remove(sfcs_conf)
+        sfcs_utils.init_sfcs_conf(filepath)
 
         sfcs_utils.sfcs_delete_file(filepath)
 

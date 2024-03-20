@@ -86,8 +86,24 @@ def print_load_time(fs_name, tensor_size, load_times):
     print(f"{fs_name:<10} {str(tensor_size):<15}", ' '.join(load_times))
 
 
+def sfcs_env():
+    os.environ['SFCS_FSNAME'] = 'byted-cpu-sfcs'
+    os.environ['SFCS_REGION'] = 'cn-beijing'
+    os.environ['SFCS_ACCESS_KEY'] = os.environ['CI_SFCS_AK']
+    os.environ['SFCS_SECRET_KEY'] = os.environ['CI_SFCS_SK']
+    os.environ['SFCS_AUTHENTICATION_SERVICE_NAME'] = 'cfs'
+    os.environ['SFCS_NS_ID'] = '18014398509481988'
+    os.environ['SFCS_UFS_PATH'] = 'tos://yinzq-bucket/'
+    os.environ['SFCS_MULTI_NIC_WHITELIST'] = 'eth0'
+    os.environ['SFCS_NETWORK_SEGMENT'] = '172.31.128.0/17'
+    os.environ['SFCS_NAMENODE_ENDPOINT_ADDRESS'] = '100.67.19.231'
+    os.environ['SFCS_LOG_SEVERITY'] = 'ERROR'
+
+
 def main():
     args = parse_args()
+    if args.base_dir.startswith('sfcs://'):
+        sfcs_env()
     load_modes = args.load_mode.split(',')
     # warmup GPU otherwise the first case would be slow
     device = torch.device(args.map_location)
