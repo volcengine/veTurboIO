@@ -249,6 +249,8 @@ class TestCredentials(TestCase):
         os.environ['SFCS_SECRET_KEY'] = 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ=='
         os.environ['SFCS_NAMENODE_ENDPOINT_ADDRESS'] = '100.67.19.231'
         sfcs_conf = os.path.join(os.getcwd(), 'base_model2.xml')
+        if os.path.exists(sfcs_conf):
+            os.remove(sfcs_conf)
         init_sfcs_conf('/base_model2/tensor.pt')
         self.assertEqual(os.environ['LIBCFS_CONF'], sfcs_conf)
         self.assertEqual(len(credentials_helper.threads), 0)
@@ -263,6 +265,10 @@ class TestCredentials(TestCase):
         os.environ.pop('SFCS_NAMENODE_ENDPOINT_ADDRESS', None)
         sfcs_conf3 = os.path.join(os.getcwd(), 'base_model3.xml')
         sfcs_conf4 = os.path.join(os.getcwd(), 'base_model4.xml')
+        if os.path.exists(sfcs_conf3):
+            os.remove(sfcs_conf3)
+        if os.path.exists(sfcs_conf4):
+            os.remove(sfcs_conf4)
         init_sfcs_conf('/base_model3/tensor.pt')
         init_sfcs_conf('/base_model4/tensor.pt')
         self.assertTrue('base_model3' in credentials_helper.threads)
@@ -290,6 +296,10 @@ class TestCredentials(TestCase):
         os.environ.pop('SFCS_NAMENODE_ENDPOINT_ADDRESS', None)
         sfcs_conf1 = os.path.join(os.getcwd(), 'base_model1.xml')
         sfcs_conf2 = os.path.join(os.getcwd(), 'base_model2.xml')
+        if os.path.exists(sfcs_conf1):
+            os.remove(sfcs_conf1)
+        if os.path.exists(sfcs_conf2):
+            os.remove(sfcs_conf2)
         init_sfcs_conf('/base_model1/tensor.pt')
         init_sfcs_conf('/base_model2/tensor.pt')
         self.assertTrue('base_model1' in credentials_helper.threads)
