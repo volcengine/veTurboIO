@@ -55,8 +55,18 @@ class TestSave(TestCase):
     def test_save_file(self):
         veturboio.save_file(self.tensors_0, self.filepath_0)
         with safe_open(self.filepath_0, framework="pt", device="cpu") as f:
+            assert len(f.keys()) == 2
             for key in f.keys():
                 self.assertTrue(torch.allclose(self.tensors_0[key], f.get_tensor(key)))
+
+    def test_save_file_for_clone_share_tensors(self):
+        share_dict = {"key1": self.tensors_0["weight1"], "key2": self.tensors_0["weight1"]}
+        veturboio.save_file(share_dict, self.filepath_0, force_save_shared_tensor=True, force_clone_shared_tensor=True)
+        assert len(share_dict) == 2  # assert save_file won't change user's state_dict.
+        with safe_open(self.filepath_0, framework="pt", device="cpu") as f:
+            for key in f.keys():
+                assert key in share_dict
+                self.assertTrue(torch.allclose(share_dict[key], f.get_tensor(key)))
 
     def test_save_model(self):
         veturboio.save_model(self.model, self.filepath_3, use_cipher=True)

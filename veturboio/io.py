@@ -18,6 +18,7 @@ import os
 from typing import Dict, Optional
 
 import torch
+from loguru import logger
 from safetensors.torch import _remove_duplicate_names
 from safetensors.torch import save_file as safetenors_save_file
 from safetensors.torch import save_model as safetensors_save_model
@@ -104,6 +105,7 @@ def save_file(
     file: FILE_PATH,
     force_contiguous: bool = True,
     force_save_shared_tensor: bool = False,
+    force_clone_shared_tensor: bool = False,
     metadata: Dict[str, str] = None,
     use_cipher: Optional[bool] = False,
 ) -> None:
@@ -114,6 +116,8 @@ def save_file(
         file (FILE_PATH): file path
         force_contiguous (bool, optional): force contiguous. Defaults to True.
         force_save_shared_tensor (bool, optional): force save shared tensor. Defaults to False.
+        force_clone_shared_tensor (bool, optional): force to clone shared tensor rather than delete
+            when force_save_shared_tensor is enabled. Defaults to False.
         metadata (Dict[str, str], optional): metadata. Defaults to None.
         use_cipher (bool, optional): decrypt file. Defaults to False.
 
@@ -134,6 +138,8 @@ def save_file(
 
     # TODO: there are some bugs while state_dict is loaded from veturboio
     if not force_save_shared_tensor:
+        if force_clone_shared_tensor:
+            logger.warning("force_clone_shared_tensor won't take any effect while force_save_shared_tensor is False;")
         try:
             saver.save_file(state_dict, metadata=metadata)
         except ValueError as e:
@@ -152,7 +158,10 @@ def save_file(
             if to_remove not in metadata:
                 # Do not override user data
                 metadata[to_remove] = kept_name
-            del state_dict[to_remove]
+            if force_clone_shared_tensor:
+                state_dict[to_remove] = state_dict[to_remove].clone()
+            else:
+                del state_dict[to_remove]
     if force_contiguous:
         state_dict = {k: v.contiguous() for k, v in state_dict.items()}
 
