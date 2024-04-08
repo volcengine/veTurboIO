@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.1.3] - 2024-04-26
+
+### Bug Fixes
+
+- **(load)** set cuda device in each thread
+- **(security)** fix typo in comments
+- **(ut)** clean files in ut
+- directIO segmentation fault
+- modify aksk less real
+
+### Features
+
+- **(security)** compat with cipher header and use cipher in posix
+- **(sfcs)** set sfcs sync interval by environ
+- **(sfcs)** reduce memcpy
+- **(sfcs)** parse sfcs confs from environ in json format
+- add clone mode for shared tensor
+- get cfs task id from env
+
+### Miscellaneous Chores
+
+- **(security)** clarify cipher readme
+- cpp coding style
+
+### License
+
+- add license file and header
+
 ## [0.1.2] - 2024-01-25
 
 ### Bug Fixes
