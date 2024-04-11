@@ -77,8 +77,8 @@ void read_unaligned_part(std::string file_path, torch::Tensor res_tensor, int64_
         {
             throw std::runtime_error("data ptr does not satisfy the align purpose");
         }
-        read_file(file_path, (char *)res_tensor.data_ptr(), NULL, 1, *read_unaligned_size, *offset, use_sfcs_sdk,
-                  use_direct_io, cipher_info);
+        read_file(file_path, (char *)res_tensor.data_ptr(), device_id, NULL, 1, *read_unaligned_size, *offset,
+                  use_sfcs_sdk, use_direct_io, cipher_info);
 
         *total_size -= *read_unaligned_size;
         *offset += *read_unaligned_size;
@@ -98,8 +98,8 @@ void read_unaligned_part(std::string file_path, torch::Tensor res_tensor, int64_
         if ((*offset & (BUF_ALIGN_SIZE - 1)) != 0)
         {
             size_t read_head_size = min(BUF_ALIGN_SIZE - (*offset & (BUF_ALIGN_SIZE - 1)), *total_size);
-            read_file(file_path, tmp_buf_head, (char *)res_tensor.data_ptr(), 1, read_head_size, *offset, use_sfcs_sdk,
-                      use_direct_io, cipher_info);
+            read_file(file_path, tmp_buf_head, device_id, (char *)res_tensor.data_ptr(), 1, read_head_size, *offset,
+                      use_sfcs_sdk, use_direct_io, cipher_info);
             *read_unaligned_size = read_head_size;
             *offset += read_head_size;
             *total_size -= read_head_size;
@@ -109,7 +109,7 @@ void read_unaligned_part(std::string file_path, torch::Tensor res_tensor, int64_
         {
             size_t tail_offset = end_offset - (end_offset & (BUF_ALIGN_SIZE - 1));
             size_t tensor_offset = tail_offset - *offset + *read_unaligned_size;
-            read_file(file_path, tmp_buf_tail, (char *)res_tensor.data_ptr() + tensor_offset, 1,
+            read_file(file_path, tmp_buf_tail, device_id, (char *)res_tensor.data_ptr() + tensor_offset, 1,
                       end_offset - tail_offset, tail_offset, use_sfcs_sdk, use_direct_io, cipher_info);
             *total_size -= end_offset - tail_offset;
         }
@@ -131,8 +131,8 @@ void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tens
     {
         read_unaligned_part(file_path, res_tensor, &offset, device_id, &total_size, use_sfcs_sdk, use_direct_io,
                             &read_unaligned_size, cipher_info);
-        read_file(file_path, (char *)res_tensor.data_ptr() + read_unaligned_size, NULL, num_thread, total_size, offset,
-                  use_sfcs_sdk, use_direct_io, cipher_info);
+        read_file(file_path, (char *)res_tensor.data_ptr() + read_unaligned_size, device_id, NULL, num_thread,
+                  total_size, offset, use_sfcs_sdk, use_direct_io, cipher_info);
     }
     else
     {
@@ -153,8 +153,8 @@ void IOHelper::load_file_to_tensor(std::string file_path, torch::Tensor res_tens
             init_buffer(file_path, total_size, use_pinmem, use_sfcs_sdk);
         }
         cudaSetDevice(device_id);
-        read_file(file_path, pin_mem, (char *)res_tensor.data_ptr() + read_unaligned_size, num_thread, total_size,
-                  offset, use_sfcs_sdk, use_direct_io, CipherInfo());
+        read_file(file_path, pin_mem, device_id, (char *)res_tensor.data_ptr() + read_unaligned_size, num_thread,
+                  total_size, offset, use_sfcs_sdk, use_direct_io, CipherInfo());
         cudaDeviceSynchronize();
         // decrypt with gpu
         if (cipher_info.use_cipher && total_size > 0)

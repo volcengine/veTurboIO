@@ -131,8 +131,8 @@ size_t SFCSFile::read_file(char *addr, size_t length, size_t offset)
     return length - count;
 }
 
-void SFCSFile::read_file_thread(int thread_id, char *addr, char *dev_mem, size_t block_size, size_t total_size,
-                                size_t global_offset)
+void SFCSFile::read_file_thread(int thread_id, char *addr, int device_id, char *dev_mem, size_t block_size,
+                                size_t total_size, size_t global_offset)
 {
     size_t offset = thread_id * block_size;
     size_t read_size = block_size;
@@ -145,11 +145,15 @@ void SFCSFile::read_file_thread(int thread_id, char *addr, char *dev_mem, size_t
     // TODO: actual number of bytes read may be less than read_size
     read_file(addr + offset, read_size, global_offset + offset);
 
-    if (dev_mem != NULL)
+    if (dev_mem != NULL && device_id >= 0)
+    {
+        cudaSetDevice(device_id);
         cudaMemcpyAsync(dev_mem + offset, addr + offset, read_size, cudaMemcpyHostToDevice);
+    }
 }
 
-size_t SFCSFile::read_file_parallel(char *addr, char *dev_mem, int num_thread, size_t total_size, size_t global_offset)
+size_t SFCSFile::read_file_parallel(char *addr, int device_id, char *dev_mem, int num_thread, size_t total_size,
+                                    size_t global_offset)
 {
     vector<thread> threads(num_thread);
 
@@ -166,8 +170,8 @@ size_t SFCSFile::read_file_parallel(char *addr, char *dev_mem, int num_thread, s
 
     for (int thread_id = 0; thread_id < num_thread; thread_id++)
     {
-        threads[thread_id] = std::thread(&SFCSFile::read_file_thread, this, thread_id, addr, dev_mem, block_size,
-                                         total_size, global_offset);
+        threads[thread_id] = std::thread(&SFCSFile::read_file_thread, this, thread_id, addr, device_id, dev_mem,
+                                         block_size, total_size, global_offset);
     }
 
     for (int thread_id = 0; thread_id < num_thread; thread_id++)
@@ -182,7 +186,7 @@ size_t SFCSFile::read_file_to_array(pybind11::array_t<char> arr, size_t length, 
 {
     pybind11::buffer_info buf_info = arr.request();
     char *addr = static_cast<char *>(buf_info.ptr);
-    return read_file_parallel(addr, NULL, num_thread, length, offset);
+    return read_file_parallel(addr, -1, NULL, num_thread, length, offset);
 }
 
 size_t SFCSFile::write_file(char *addr, size_t length)

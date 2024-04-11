@@ -43,14 +43,15 @@ class SFCSFile
     SFCSFile(std::string file_path, CipherInfo cipher_info);
     ~SFCSFile();
     size_t get_file_size();
-    size_t read_file_parallel(char *addr, char *dev_mem, int num_thread, size_t total_size, size_t global_offset);
+    size_t read_file_parallel(char *addr, int device_id, char *dev_mem, int num_thread, size_t total_size,
+                              size_t global_offset);
     size_t read_file_to_array(pybind11::array_t<char> arr, size_t length, size_t offset, int num_thread);
     size_t write_file_from_array(pybind11::array_t<char> arr, size_t length);
     void delete_file();
 
   private:
     size_t read_file(char *addr, size_t length, size_t offset);
-    void read_file_thread(int thread_id, char *addr, char *dev_mem, size_t block_size, size_t total_size,
+    void read_file_thread(int thread_id, char *addr, int device_id, char *dev_mem, size_t block_size, size_t total_size,
                           size_t global_offset);
     size_t write_file(char *addr, size_t length);
 };
