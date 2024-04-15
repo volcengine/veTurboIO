@@ -59,7 +59,6 @@ SFCS_OPT_ENV_LIST = [
 def default_sfcs_properties() -> dict:
     return {
         'cfs.filesystem.fs-mode': 'ACC',
-        'cfs.filesystem.task-id': 'sfcs',
         'cfs.filesystem.resolve.addr.by.dns': 'false',
         'cfs.metrics.emitters': 'metric_server;local_prometheus',
         'cfs.client.metadata-cache.enable': 'false',
@@ -182,6 +181,7 @@ def init_sfcs_properties(group: str) -> dict:
     properties['dfs.client.log.severity'] = os.getenv('SFCS_LOG_SEVERITY')
 
     # optional
+    properties['cfs.filesystem.task-id'] = os.getenv("SFCS_TASK_ID", "sfcs")
     properties['cfs.filesystem.sync-interval'] = os.getenv('SFCS_SYNC_INTERVAL', "-1")
     properties['cfs.access.key'] = os.getenv('SFCS_ACCESS_KEY')
     properties['cfs.secret.key'] = os.getenv('SFCS_SECRET_KEY')
