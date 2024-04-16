@@ -86,9 +86,9 @@ class DatapipeHandler(http.server.SimpleHTTPRequestHandler):
                 'Cred': {
                     'CurrentTime': date_now.isoformat(),
                     'ExpiredTime': date_exp.isoformat(),
-                    'AccessKeyId': 'AKTPODg0MzV**2ZDcxMDg',
-                    'SecretAccessKey': 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ==',
-                    'SessionToken': 'STSeyJBY2NvdW50SW**kXXXXXXX',  # fake SessionToken real one is longer
+                    'AccessKeyId': 'A' * 12,
+                    'SecretAccessKey': 'S' * 12,
+                    'SessionToken': 'ST' * 12,  # fake SessionToken real one is longer
                 },
                 'SfcsNameNodeAddress': '100.67.19.231',
             }
@@ -227,9 +227,9 @@ class TestCredentials(TestCase):
         self.assertIsNotNone(cred)
         self.assertEqual(cred['SfcsNameNodeAddress'], '100.67.19.231')
         cred = cred['Cred']
-        self.assertEqual(cred['AccessKeyId'], 'AKTPODg0MzV**2ZDcxMDg')
-        self.assertEqual(cred['SecretAccessKey'], 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ==')
-        self.assertEqual(cred['SessionToken'], 'STSeyJBY2NvdW50SW**kXXXXXXX')
+        self.assertEqual(cred['AccessKeyId'], 'A' * 12)
+        self.assertEqual(cred['SecretAccessKey'], 'S' * 12)
+        self.assertEqual(cred['SessionToken'], 'ST' * 12)
 
     def test_sfcs_conf(self):
         # case 1: a xml file already exists, do nothing
@@ -245,8 +245,8 @@ class TestCredentials(TestCase):
             os.environ[e] = 'test-value'
 
         # case 2: env SFCS_ACCESS_KEY and SFCS_SECRET_KEY and SFCS_NAMENODE_ENDPOINT_ADDRESS exists
-        os.environ['SFCS_ACCESS_KEY'] = 'AKTPODg0MzV**2ZDcxMDg'
-        os.environ['SFCS_SECRET_KEY'] = 'TVRNNVlqRmxPR1**mRoTkdWbE1ESQ=='
+        os.environ['SFCS_ACCESS_KEY'] = 'A' * 12
+        os.environ['SFCS_SECRET_KEY'] = 'S' * 12
         os.environ['SFCS_NAMENODE_ENDPOINT_ADDRESS'] = '100.67.19.231'
         sfcs_conf = os.path.join(os.getcwd(), 'base_model2.xml')
         if os.path.exists(sfcs_conf):
