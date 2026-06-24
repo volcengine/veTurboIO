@@ -61,7 +61,7 @@ def parse_args():
         dest='end',
         help='specify the maximum file size to benchmark in bytes or in format like xxKB/MB/GB',
     )
-    parser.add_argument('--base_dir', dest='base_dir', help='specify the the base dir of files to be benchmarked')
+    parser.add_argument('--base_dir', dest='base_dir', help='specify the base dir of files to be benchmarked')
     parser.add_argument('--fs_name', default='local_fs', help='file system name that would be displayed in the result')
     parser.add_argument('--gen_data', default=False, action=argparse.BooleanOptionalAction, dest='gen_data')
     parser.add_argument(
@@ -69,7 +69,7 @@ def parse_args():
     )
     parser.add_argument('--use_pinmem', default=False, action=argparse.BooleanOptionalAction, dest='use_pinmem')
     parser.add_argument(
-        '--load_mode', default='veturboio', dest='load_mode', help='load modes specified, seperated by comma'
+        '--load_mode', default='veturboio', dest='load_mode', help='load modes specified, separated by comma'
     )
 
     args = parser.parse_args()

@@ -125,7 +125,7 @@ def get_veturboio_extension():
     # In torch 2.0, this flag is False, and the *.so lib set this flag as False when building.
     # In newer torch, this flag is True, to keep compatibility with *.so lib, we set it False
     # to generate g++ flags '-D_GLIBCXX_USE_CXX11_ABI=0' when building veturboio_ext, otherwise
-    # some 'undefine symbol' error of std::string will be thrown.
+    # some 'undefined symbol' error of std::string will be thrown.
     torch._C._GLIBCXX_USE_CXX11_ABI = False
 
     if "--cuda_ext" in sys.argv:
@@ -215,7 +215,7 @@ class GetLibCfsCommand(setuptools.Command):
 setup(
     name="veturboio",
     version=get_version(),
-    description="Effcient PyTorch IO libraray on Volcanic Engine",
+    description="Efficient PyTorch IO library on Volcanic Engine",
     author="AML Team",
     ext_modules=[get_veturboio_extension()],
     packages=find_packages(exclude=("veturboio.ops.csrc.common.sfcs.lib")),
