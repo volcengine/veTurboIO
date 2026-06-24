@@ -20,7 +20,7 @@ from typing import Any, Dict
 
 import numpy as np
 import torch
-from safetensors.torch import save_file as safetenors_save_file
+from safetensors.torch import save_file as safetensors_save_file
 from safetensors.torch import save_model as safetensors_save_model
 
 from veturboio.ops.cipher import CipherInfo, CipherMode, create_cipher_with_header
@@ -74,7 +74,7 @@ class SfcsClientSaver(BaseSaver):
         else:
             with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpfile:
                 file_path = tmpfile.name
-                safetenors_save_file(state_dict, file_path, metadata=metadata)
+                safetensors_save_file(state_dict, file_path, metadata=metadata)
 
                 file_size = os.path.getsize(file_path)
                 if self.cipher_info.use_header:

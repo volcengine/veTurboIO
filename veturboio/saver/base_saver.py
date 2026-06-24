@@ -20,7 +20,7 @@ from typing import Any, Dict
 
 import numpy as np
 import torch
-from safetensors.torch import save_file as safetenors_save_file
+from safetensors.torch import save_file as safetensors_save_file
 from safetensors.torch import save_model as safetensors_save_model
 
 from veturboio.ops.cipher import CipherInfo, CipherMode, create_cipher_with_header, encrypt
@@ -68,7 +68,7 @@ class PosixSaver(BaseSaver):
             if self.cipher_info.use_cipher:
                 with tempfile.NamedTemporaryFile(dir="/dev/shm") as tmpfile:
                     tmp_file_path = tmpfile.name
-                    safetenors_save_file(state_dict, tmp_file_path, metadata=metadata)
+                    safetensors_save_file(state_dict, tmp_file_path, metadata=metadata)
                     tmp_file_size = os.path.getsize(tmp_file_path)
                     tmp_file_bytes = np.memmap(tmp_file_path, dtype=np.uint8, mode='r', shape=tmp_file_size)
                     h_off = CipherInfo.HEADER_SIZE if self.cipher_info.use_header else 0
@@ -78,7 +78,7 @@ class PosixSaver(BaseSaver):
                         file_bytes[:h_off] = np.frombuffer(self.cipher_info.to_header_bytes(), dtype=np.uint8)
                     file_bytes.flush()
             else:
-                safetenors_save_file(state_dict, self.file, metadata=metadata)
+                safetensors_save_file(state_dict, self.file, metadata=metadata)
 
     def save_model(self, model: torch.nn.Module) -> None:
         if self.cipher_info.use_cipher:
